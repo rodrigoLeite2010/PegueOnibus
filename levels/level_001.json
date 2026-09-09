@@ -1,0 +1,12 @@
+{
+  "id": 1,
+  "waiting_slots": 4,
+  "board": {"rows": 7, "cols": 7},
+  "passengers": ["red","red","blue","blue","green","green","yellow","yellow"],
+  "vehicles": [
+    {"id":"red_car","type":"car","color":"red","capacity":2,"row":4,"col":2,"orientation":"horizontal","exit_direction":"left"},
+    {"id":"blue_car","type":"car","color":"blue","capacity":2,"row":2,"col":3,"orientation":"vertical","exit_direction":"up"},
+    {"id":"green_car","type":"car","color":"green","capacity":2,"row":3,"col":4,"orientation":"vertical","exit_direction":"down"},
+    {"id":"yellow_car","type":"car","color":"yellow","capacity":2,"row":1,"col":2,"orientation":"horizontal","exit_direction":"right"}
+  ]
+}

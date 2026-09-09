@@ -1,0 +1,43 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Pega Passageiro"
+config/description="Puzzle casual 3D mobile em Godot, com veiculos coloridos, fila de passageiros e slots de espera."
+run/main_scene="res://scenes/app/Main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://assets/ui/icon.svg"
+
+[autoload]
+
+AudioManager="*res://scripts/audio/audio_manager.gd"
+Wallet="*res://scripts/core/wallet.gd"
+ProgressService="*res://scripts/core/progress_service.gd"
+AppRouter="*res://scripts/app/app_router.gd"
+AccessibilitySettings="*res://scripts/core/accessibility_settings.gd"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/window_width_override=540
+window/size/window_height_override=960
+window/stretch/mode="canvas_items"
+window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true

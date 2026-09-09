@@ -1,0 +1,11 @@
+.godot/
+.import/
+export.cfg
+export_presets.*.cfg
+*.translation
+*.tmp
+*.log
+build/
+android/
+ios/
+

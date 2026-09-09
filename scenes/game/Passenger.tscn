@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://pega_passageiro_passenger"]
+
+[ext_resource type="Script" path="res://scripts/game/passenger_controller.gd" id="1_passenger"]
+
+[node name="Passenger" type="Node3D"]
+script = ExtResource("1_passenger")

@@ -1,0 +1,97 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/level_map_controller.gd" id="1_map"]
+
+[sub_resource type="StyleBoxFlat" id="BackgroundStyle"]
+bg_color = Color(0.80, 0.86, 0.95, 1)
+
+[sub_resource type="StyleBoxFlat" id="BlueButton"]
+bg_color = Color(0.15, 0.62, 0.90, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.08, 0.43, 0.68, 1)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+shadow_color = Color(0.1, 0.15, 0.22, 0.28)
+shadow_size = 7
+shadow_offset = Vector2(0, 5)
+
+[sub_resource type="StyleBoxFlat" id="BlueButtonPressed"]
+bg_color = Color(0.10, 0.48, 0.73, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.07, 0.34, 0.55, 1)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+
+[node name="LevelMapScreen" type="CanvasLayer"]
+script = ExtResource("1_map")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Background" type="Panel" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("BackgroundStyle")
+mouse_filter = 2
+
+[node name="Back" type="Button" parent="Root"]
+layout_mode = 0
+offset_left = 28.0
+offset_top = 28.0
+offset_right = 94.0
+offset_bottom = 94.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 30
+theme_override_styles/normal = SubResource("BlueButton")
+theme_override_styles/pressed = SubResource("BlueButtonPressed")
+text = "←"
+
+[node name="Title" type="Label" parent="Root"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 32.0
+offset_bottom = 96.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.18, 0.23, 0.33, 1)
+theme_override_font_sizes/font_size = 40
+text = "Mapa de fases"
+horizontal_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 40.0
+offset_top = 130.0
+offset_right = -40.0
+offset_bottom = -30.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="LevelList" type="VBoxContainer" parent="Root/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 16

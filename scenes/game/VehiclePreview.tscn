@@ -1,0 +1,44 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/vehicle_preview_controller.gd" id="1_preview"]
+[ext_resource type="PackedScene" path="res://scenes/game/Board.tscn" id="2_board"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_preview"]
+sky_top_color = Color(0.73, 0.82, 0.93, 1)
+sky_horizon_color = Color(0.94, 0.97, 1, 1)
+ground_bottom_color = Color(0.73, 0.82, 0.93, 1)
+ground_horizon_color = Color(0.94, 0.97, 1, 1)
+
+[sub_resource type="Sky" id="Sky_preview"]
+sky_material = SubResource("ProceduralSkyMaterial_preview")
+
+[sub_resource type="Environment" id="Environment_preview"]
+background_mode = 2
+sky = SubResource("Sky_preview")
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.72
+
+[sub_resource type="BoxMesh" id="BoxMesh_stage"]
+size = Vector3(10.2, 0.08, 9.1)
+
+[node name="VehiclePreview" type="Node3D"]
+script = ExtResource("1_preview")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_preview")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.83282, -0.321394, 0.450872, 0, 0.814116, 0.580703, -0.553544, -0.483696, 0.677986, 0, 8, 4)
+light_energy = 2.1
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+
+[node name="Stage" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.5, -0.11, 4)
+mesh = SubResource("BoxMesh_stage")
+
+[node name="Board" parent="." instance=ExtResource("2_board")]
+
+[node name="Vehicles" type="Node3D" parent="."]
