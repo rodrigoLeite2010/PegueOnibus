@@ -5,4 +5,4 @@
 [node name="Main" type="Node" unique_id=494597812]
 script = ExtResource("1_main")
 
-[node name="ScreenHost" type="Node" parent="."]
+[node name="ScreenHost" type="Node" parent="." unique_id=1278260534]

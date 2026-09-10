@@ -8,6 +8,7 @@ signal pressed(vehicle_id: String)
 @export var color_id: String = "red"
 @export var footprint_rows: int = 2
 @export var footprint_cols: int = 1
+@export var orientation: String = "vertical"
 @export var exit_direction: String = "up"
 
 const COLOR_MAP := {
@@ -25,6 +26,10 @@ const USE_PROCEDURAL_PLACEHOLDER := true
 var visual_resource: VehicleVisualResource
 var _visual_pivot: Node3D
 var _input_area: Area3D
+var _model_boarding_point: Node3D
+var _model_selection_point: Node3D
+var _model_node: Node3D
+var _model_base_rotation_y: float = 0.0
 
 func _ready() -> void:
 	if get_child_count() == 0:
@@ -36,6 +41,7 @@ func setup_from_state(vehicle: VehicleState, cell_size: float) -> void:
 	color_id = vehicle.color_id
 	footprint_rows = vehicle.footprint_rows
 	footprint_cols = vehicle.footprint_cols
+	orientation = vehicle.orientation
 	exit_direction = vehicle.exit_direction
 	position = Vector3(
 		(vehicle.col + vehicle.footprint_cols * 0.5) * cell_size,
@@ -48,7 +54,11 @@ func rebuild() -> void:
 	for child: Node in get_children():
 		child.queue_free()
 
-	visual_resource = VehicleVisualLibrary.get_for_color(color_id)
+	_model_boarding_point = null
+	_model_selection_point = null
+	_model_node = null
+	_model_base_rotation_y = 0.0
+	visual_resource = VehicleVisualLibrary.get_for_vehicle(type_id, color_id)
 	var width: float = maxf(0.78, float(footprint_cols) * 0.88)
 	var depth: float = maxf(0.78, float(footprint_rows) * 0.88)
 
@@ -77,9 +87,19 @@ func rebuild() -> void:
 	_add_input_area(width, depth)
 
 func get_boarding_point() -> Vector3:
+	# Modelos 3D profissionais podem declarar o ponto exato da porta com um
+	# Marker3D chamado BoardingPoint. Como ele faz parte do modelo visual, sua
+	# posicao acompanha escala e rotacao automaticamente.
+	if is_instance_valid(_model_boarding_point):
+		return _model_boarding_point.global_position
 	if visual_resource != null:
-		return global_position + visual_resource.door_offset
-	return global_position + Vector3(0.0, 0.0, -0.35)
+		return global_position + _rotated_local_offset(visual_resource.door_offset)
+	return global_position + _rotated_local_offset(Vector3(0.0, 0.0, -0.35))
+
+func get_selection_point() -> Vector3:
+	if is_instance_valid(_model_selection_point):
+		return _model_selection_point.global_position
+	return global_position + Vector3(0.0, 0.7, 0.0)
 
 func animate_valid_tap() -> void:
 	if _visual_pivot == null:
@@ -126,23 +146,38 @@ func drive_route(points: Array[Vector3]) -> void:
 	if points.is_empty():
 		return
 	for target: Vector3 in points:
-		var distance: float = position.distance_to(target)
-		var duration: float = clampf(distance * 0.085, 0.12, 0.38)
+		var delta: Vector3 = target - position
+		var distance: float = delta.length()
+		var duration: float = clampf(distance * 0.095, 0.16, 0.46)
+
+		# O GLB agora vira de verdade para o sentido do deslocamento. Isso evita
+		# o efeito de carro deslizando de lado quando contorna o tabuleiro.
+		if is_instance_valid(_model_node) and Vector2(delta.x, delta.z).length() > 0.01:
+			var desired_y: float = _model_base_rotation_y + rad_to_deg(atan2(delta.x, delta.z))
+			var turn := create_tween()
+			turn.set_trans(Tween.TRANS_SINE)
+			turn.set_ease(Tween.EASE_IN_OUT)
+			turn.tween_property(_model_node, "rotation_degrees:y", desired_y, 0.10)
+			await turn.finished
+
 		var tween := create_tween()
 		tween.set_trans(Tween.TRANS_QUAD)
 		tween.set_ease(Tween.EASE_IN_OUT)
 		tween.tween_property(self, "position", target, duration)
 		if _visual_pivot != null:
-			var lean: float = 2.0 if target.x >= position.x else -2.0
-			tween.parallel().tween_property(_visual_pivot, "rotation_degrees:y", lean, minf(duration, 0.16))
+			# Pequena inclinacao de carroceria durante o deslocamento, sem mudar
+			# a orientacao logica/collider do veiculo.
+			var roll: float = -1.8 if delta.x >= 0.0 else 1.8
+			tween.parallel().tween_property(_visual_pivot, "rotation_degrees:z", roll, minf(duration, 0.14))
 		await tween.finished
+
 	if _visual_pivot != null:
 		var settle := create_tween()
 		settle.set_trans(Tween.TRANS_BACK)
 		settle.set_ease(Tween.EASE_OUT)
 		settle.tween_property(_visual_pivot, "scale", Vector3(1.06, 1.06, 1.06), 0.07)
 		settle.tween_property(_visual_pivot, "scale", Vector3.ONE, 0.12)
-		settle.parallel().tween_property(_visual_pivot, "rotation_degrees:y", 0.0, 0.12)
+		settle.parallel().tween_property(_visual_pivot, "rotation_degrees:z", 0.0, 0.12)
 		await settle.finished
 
 func animate_boarding_bounce() -> void:
@@ -156,12 +191,20 @@ func animate_boarding_bounce() -> void:
 
 func drive_away_from_pickup(board_width: float) -> void:
 	var target := position + Vector3(maxf(board_width * 0.65, 4.5), 0.18, -0.35)
+	var delta: Vector3 = target - position
+	if is_instance_valid(_model_node):
+		var desired_y: float = _model_base_rotation_y + rad_to_deg(atan2(delta.x, delta.z))
+		var turn := create_tween()
+		turn.set_trans(Tween.TRANS_SINE)
+		turn.set_ease(Tween.EASE_IN_OUT)
+		turn.tween_property(_model_node, "rotation_degrees:y", desired_y, 0.10)
+		await turn.finished
 	var tween := create_tween()
 	tween.set_trans(Tween.TRANS_QUAD)
 	tween.set_ease(Tween.EASE_IN)
-	tween.parallel().tween_property(self, "position", target, 0.42)
+	tween.parallel().tween_property(self, "position", target, 0.48)
 	if _visual_pivot != null:
-		tween.parallel().tween_property(_visual_pivot, "scale", Vector3(0.92, 0.92, 0.92), 0.42)
+		tween.parallel().tween_property(_visual_pivot, "scale", Vector3(0.88, 0.88, 0.88), 0.48)
 	await tween.finished
 
 
@@ -185,9 +228,27 @@ func _add_model_visual() -> void:
 	var model := visual_resource.model_scene.instantiate() as Node3D
 	if model == null:
 		return
-	model.position = Vector3(0.0, visual_resource.sprite_vertical_offset, 0.0)
-	model.scale = Vector3.ONE * visual_resource.sprite_scale
+	model.name = "VehicleModel"
+	model.position = visual_resource.model_offset
+	model.scale = Vector3.ONE * visual_resource.model_scale
+	model.rotation_degrees = visual_resource.model_rotation_degrees
+
+	# Convencao do primeiro GLB: comprimento no eixo Z. Quando o footprint
+	# logico e horizontal, giramos somente a apresentacao; a regra continua
+	# usando row/col/footprint sem depender da arte.
+	if orientation == "horizontal":
+		model.rotation_degrees.y += 90.0
+
 	_visual_pivot.add_child(model)
+	_model_node = model
+	_model_base_rotation_y = model.rotation_degrees.y
+	_model_boarding_point = model.find_child("BoardingPoint", true, false) as Node3D
+	_model_selection_point = model.find_child("SelectionPoint", true, false) as Node3D
+
+func _rotated_local_offset(offset: Vector3) -> Vector3:
+	if orientation == "horizontal":
+		return offset.rotated(Vector3.UP, deg_to_rad(90.0))
+	return offset
 
 func _add_sprite_visual(width: float, depth: float) -> void:
 	var sprite := Sprite3D.new()

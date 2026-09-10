@@ -5,6 +5,9 @@ extends Resource
 @export var color_id: String = "red"
 @export var sprite_texture: Texture2D
 @export var model_scene: PackedScene
+@export var model_scale: float = 1.0
+@export var model_offset: Vector3 = Vector3.ZERO
+@export var model_rotation_degrees: Vector3 = Vector3.ZERO
 @export var sprite_scale: float = 1.0
 @export var sprite_vertical_offset: float = 0.46
 @export var collider_height: float = 0.85

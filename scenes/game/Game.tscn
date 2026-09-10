@@ -28,6 +28,8 @@ shadow_enabled = true
 
 [node name="Passengers" type="Node3D" parent="."]
 
+[node name="BoardingArea" type="Node3D" parent="."]
+
 [node name="VFX" type="Node3D" parent="."]
 
 [node name="Camera3D" type="Camera3D" parent="."]

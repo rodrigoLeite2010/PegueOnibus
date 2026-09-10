@@ -25,6 +25,7 @@ const HUD_BOTTOM_UNSAFE_FRACTION := 190.0 / 1280.0
 @onready var vehicles_root: Node3D = $Vehicles
 @onready var passengers_root: Node3D = $Passengers
 @onready var vfx_root: Node3D = $VFX
+@onready var boarding_area: Node3D = $BoardingArea
 @onready var camera: Camera3D = $Camera3D
 @onready var hud: HUDController = $HUD
 
@@ -102,6 +103,7 @@ func _load_level_number(level_number: int) -> void:
 		level = LevelGenerator.generate(level_number)
 	state = GameEngine.create_state(level)
 	board.setup(state.board_rows, state.board_cols, CELL_SIZE)
+	_setup_boarding_area()
 	_spawn_vehicles()
 	_setup_camera()
 	hud.update_state(state, "Toque em um veiculo livre.", _level_position_text(), -1)
@@ -145,7 +147,7 @@ func _fallback_level() -> LevelDefinition:
 
 func _spawn_vehicles() -> void:
 	for child: Node in vehicles_root.get_children():
-		child.queue_free()
+		child.free()
 	vehicle_nodes.clear()
 	for vehicle_id: String in state.vehicles.keys():
 		var vehicle: VehicleState = state.vehicles[vehicle_id]
@@ -190,10 +192,18 @@ func _on_vehicle_pressed(vehicle_id: String) -> void:
 	# O estado logico e confirmado primeiro, mas o HUD so recebe o novo estado
 	# depois que a animacao representa a acao. Assim a fila nao "teleporta".
 	state = result["state"]
-	var slot_index: int = _event_slot_index(events, vehicle_id)
+	var slot_index: int = _state_slot_index(vehicle_id)
+	if slot_index < 0:
+		slot_index = _event_slot_index(events, vehicle_id)
 	var route: Array[Vector3] = _build_route_to_waiting_slot(vehicle_node, slot_index)
 	hud.show_message("Veiculo a caminho dos passageiros...")
 	await vehicle_node.drive_route(route)
+	# Snap final em coordenada GLOBAL. Mesmo que algum ponto intermediario use
+	# coordenadas locais, o carro termina exatamente no Marker3D do slot.
+	var final_marker: Marker3D = _boarding_slot_marker(slot_index)
+	if final_marker != null:
+		vehicle_node.global_position = final_marker.global_position
+	print("[BOARDING] %s -> slot %d | world=%s" % [vehicle_id, slot_index, str(vehicle_node.global_position)])
 
 	# Agora reproduzimos PassengerBoarded/SlotFreed na ordem dos eventos do motor.
 	await _play_boarding_events(events)
@@ -254,6 +264,17 @@ func _find_hint_vehicle_id() -> String:
 			fallback_id = vehicle_id
 	return fallback_id
 
+func _state_slot_index(vehicle_id: String) -> int:
+	# Fonte definitiva para o visual: o estado atual do motor. Isso evita que
+	# qualquer evento intermediario/ordem de animacao mande dois carros ao mesmo slot.
+	for slot: WaitingSlotState in state.waiting_slots:
+		if slot.vehicle_id == vehicle_id:
+			return slot.index
+	return -1
+
+func _boarding_slot_marker(slot_index: int) -> Marker3D:
+	return boarding_area.get_node_or_null("Slot%d" % slot_index) as Marker3D
+
 func _event_slot_index(events: Array, vehicle_id: String) -> int:
 	for item: Variant in events:
 		var event: GameEvent = item as GameEvent
@@ -261,16 +282,116 @@ func _event_slot_index(events: Array, vehicle_id: String) -> int:
 			return int(event.payload.get("slot_index", 0))
 	return 0
 
+func _setup_boarding_area() -> void:
+	# Faixa de embarque fisica: os slots continuam sendo definidos pela regra,
+	# mas agora existe uma plataforma/rua visivel no mesmo mundo 3D. Isso tira
+	# a sensacao de "carros flutuando acima do tabuleiro" e prepara o caminho
+	# para passageiros correndo ate as portas.
+	for child: Node in boarding_area.get_children():
+		child.free()
+
+	var count: int = maxi(state.waiting_slots.size(), 1)
+	var board_width: float = float(state.board_cols) * CELL_SIZE
+	var spacing: float = minf(1.48, (board_width - 0.9) / float(count))
+	var total_span: float = spacing * float(count - 1)
+	var first_x: float = board_width * 0.5 - total_span * 0.5
+	var slot_z: float = -0.52
+
+	# Plataforma clara e pista de acesso escura, ambas apenas visuais.
+	_add_boarding_box(
+		"Platform",
+		Vector3(board_width + 0.65, 0.06, 1.40),
+		Vector3(board_width * 0.5, 0.01, -0.55),
+		Color("#dce8f6")
+	)
+	_add_boarding_box(
+		"AccessLane",
+		Vector3(board_width + 0.65, 0.035, 0.44),
+		Vector3(board_width * 0.5, 0.035, -1.02),
+		Color("#718097")
+	)
+
+	# Linha branca da pista.
+	_add_boarding_box(
+		"LaneLine",
+		Vector3(board_width * 0.78, 0.018, 0.045),
+		Vector3(board_width * 0.5, 0.06, -1.02),
+		Color(1.0, 1.0, 1.0, 0.92)
+	)
+
+	# Ponto onde os passageiros "nascem" visualmente antes de caminhar.
+	var queue_start := Marker3D.new()
+	queue_start.name = "PassengerQueueStart"
+	queue_start.position = Vector3(board_width * 0.5, 0.20, -1.34)
+	boarding_area.add_child(queue_start)
+
+	for index: int in range(count):
+		var marker := Marker3D.new()
+		marker.name = "Slot%d" % index
+		marker.position = Vector3(first_x + spacing * float(index), 0.31, slot_z)
+		boarding_area.add_child(marker)
+
+		# Base maior e mais legivel, com linha clara na frente e separadores.
+		var pad := MeshInstance3D.new()
+		pad.name = "Pad"
+		var pad_mesh := BoxMesh.new()
+		pad_mesh.size = Vector3(1.22, 0.026, 0.76)
+		pad.mesh = pad_mesh
+		pad.position = Vector3(0.0, -0.285, 0.0)
+		var pad_material := StandardMaterial3D.new()
+		pad_material.albedo_color = Color("#aebdd0")
+		pad_material.roughness = 0.9
+		pad.material_override = pad_material
+		marker.add_child(pad)
+
+		var stop_line := MeshInstance3D.new()
+		var stop_mesh := BoxMesh.new()
+		stop_mesh.size = Vector3(0.92, 0.018, 0.045)
+		stop_line.mesh = stop_mesh
+		stop_line.position = Vector3(0.0, -0.258, -0.30)
+		var stop_material := StandardMaterial3D.new()
+		stop_material.albedo_color = Color(1.0, 1.0, 1.0, 0.95)
+		stop_line.material_override = stop_material
+		marker.add_child(stop_line)
+
+func _add_boarding_box(name_text: String, box_size: Vector3, box_position: Vector3, color: Color) -> void:
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = name_text
+	var box := BoxMesh.new()
+	box.size = box_size
+	mesh_instance.mesh = box
+	mesh_instance.position = box_position
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.88
+	mesh_instance.material_override = material
+	boarding_area.add_child(mesh_instance)
+
+func _boarding_slot_position(slot_index: int) -> Vector3:
+	var marker: Marker3D = _boarding_slot_marker(slot_index)
+	if marker != null:
+		# VehicleController.position e todos os pontos usados por drive_route()
+		# estao no espaco LOCAL de Vehicles. O Marker3D pertence a BoardingArea,
+		# portanto nunca misturamos marker.global_position diretamente com
+		# vehicle.position. A conversao explicita elimina o deslocamento que fazia
+		# o segundo carro terminar atras/sobre o primeiro.
+		return vehicles_root.to_local(marker.global_position)
+	# Fallback defensivo ja no mesmo espaco local de Vehicles.
+	var fallback_world := boarding_area.to_global(Vector3(float(state.board_cols) * CELL_SIZE * 0.5, 0.31, -0.52))
+	return vehicles_root.to_local(fallback_world)
+
 func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: int) -> Array[Vector3]:
 	var route: Array[Vector3] = []
 	var rows_depth: float = float(state.board_rows) * CELL_SIZE
 	var cols_width: float = float(state.board_cols) * CELL_SIZE
 	var margin: float = 0.72
+	var lane_z: float = -0.78
 	var stage: Vector3 = vehicle_node.position
 
+	# Primeiro o veiculo realmente sai do tabuleiro pela direcao autorizada.
 	match vehicle_node.exit_direction:
 		"up":
-			stage.z = -margin
+			stage.z = lane_z
 		"down":
 			stage.z = rows_depth + margin
 		"left":
@@ -279,30 +400,26 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 			stage.x = cols_width + margin
 	route.append(stage)
 
-	var slot_position: Vector3 = _slot_world_position(slot_index)
-	# Veiculos que saem por baixo contornam o tabuleiro por um dos lados.
+	# IMPORTANTE: slot_position ja esta convertido para o espaco local de
+	# Vehicles, exatamente o mesmo espaco de vehicle_node.position.
+	var slot_position: Vector3 = _boarding_slot_position(slot_index)
+
+	# Depois entra numa faixa comum de embarque. O ultimo ponto e SEMPRE o
+	# Marker3D do slot logico convertido para o espaco correto.
 	if vehicle_node.exit_direction == "down":
 		var side_x: float = -margin
 		if vehicle_node.position.x >= cols_width * 0.5:
 			side_x = cols_width + margin
 		route.append(Vector3(side_x, 0.31, rows_depth + margin))
-		route.append(Vector3(side_x, 0.31, -margin))
+		route.append(Vector3(side_x, 0.31, lane_z))
 	elif vehicle_node.exit_direction == "left":
-		route.append(Vector3(-margin, 0.31, -margin))
+		route.append(Vector3(-margin, 0.31, lane_z))
 	elif vehicle_node.exit_direction == "right":
-		route.append(Vector3(cols_width + margin, 0.31, -margin))
+		route.append(Vector3(cols_width + margin, 0.31, lane_z))
 
+	route.append(Vector3(slot_position.x, 0.31, lane_z))
 	route.append(slot_position)
 	return route
-
-func _slot_world_position(slot_index: int) -> Vector3:
-	var count: int = maxi(state.waiting_slots.size(), 1)
-	var width: float = float(state.board_cols) * CELL_SIZE
-	var usable: float = maxf(width - 1.4, 2.0)
-	var x: float = width * 0.5
-	if count > 1:
-		x = 0.7 + usable * (float(slot_index) / float(count - 1))
-	return Vector3(x, 0.31, -0.42)
 
 func _play_boarding_events(events: Array) -> void:
 	var passenger_index: int = 0
@@ -334,11 +451,14 @@ func _play_boarding_events(events: Array) -> void:
 				vehicle_nodes.erase(completed_vehicle_id)
 
 func _passenger_spawn_position(index: int, target_vehicle_position: Vector3) -> Vector3:
-	# Os passageiros aparecem como uma fila 3D logo acima da faixa de embarque
-	# e caminham ate o veiculo. O pequeno deslocamento por indice evita sobreposicao.
-	var lane_x: float = target_vehicle_position.x - 1.15 - float(index % 3) * 0.24
-	var lane_z: float = target_vehicle_position.z - 0.72 - float(index / 3) * 0.16
-	return Vector3(lane_x, 0.20, lane_z)
+	# Origem visual fixa na area de embarque. Cada passageiro surge um pouco
+	# atras/lateral do anterior e percorre a pista ate o BoardingPoint.
+	var queue_marker: Marker3D = boarding_area.get_node_or_null("PassengerQueueStart") as Marker3D
+	var base_local := Vector3(target_vehicle_position.x - 1.15, 0.20, target_vehicle_position.z - 0.78)
+	if queue_marker != null:
+		base_local = passengers_root.to_local(queue_marker.global_position)
+	var lane_offset := Vector3(float(index % 4) * 0.22 - 0.33, 0.0, float(index / 4) * 0.15)
+	return base_local + lane_offset
 
 func _message_from_events(events: Array) -> String:
 	if _has_event(events, "Win"):
@@ -443,5 +563,5 @@ func _setup_camera() -> void:
 func _clear_all_visuals() -> void:
 	for root: Node3D in [vehicles_root, passengers_root, vfx_root]:
 		for child: Node in root.get_children():
-			child.queue_free()
+			child.free()
 	vehicle_nodes.clear()
