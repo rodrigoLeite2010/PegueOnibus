@@ -15,6 +15,8 @@ extends Node
 const SFX_PATHS := {
 	"tap_valid": "res://assets/audio/tap_valid.ogg",
 	"blocked": "res://assets/audio/blocked.ogg",
+	"car_driving": "res://assets/audio/car_driving.ogg",
+	"car_parking": "res://assets/audio/car_parking.ogg",
 	"passenger_board": "res://assets/audio/passenger_board.ogg",
 	"vehicle_complete": "res://assets/audio/vehicle_complete.ogg",
 	"coin": "res://assets/audio/coin.ogg",

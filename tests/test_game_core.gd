@@ -62,13 +62,27 @@ func _test_no_slot_available() -> void:
 		]
 	)
 	var state: GameState = GameEngine.create_state(level)
-	var first_result: Dictionary = GameEngine.try_send_vehicle_to_waiting_slot(state, "blue_car")
-	state = first_result["state"]
-	var second_result: Dictionary = GameEngine.try_send_vehicle_to_waiting_slot(state, "green_car")
-	var second_state: GameState = second_result["state"]
-	var first_event: GameEvent = second_result["events"][0]
-	assert(second_state.moves == 1)
-	assert(first_event.type == "NoWaitingSlotAvailable")
+	# Ocupa a unica vaga manualmente (sem passar pelo fluxo normal do motor):
+	# com so 1 vaga, deixar o motor de fato estacionar o blue_car dispararia
+	# a checagem de Game Over (nenhuma vaga livre + cor da frente nao
+	# atendida) -- comportamento correto, ja coberto por
+	# _test_full_slots_without_front_color_is_game_over. Aqui queremos isolar
+	# so o evento "NoWaitingSlotAvailable" ao tentar mandar um segundo
+	# veiculo com a unica vaga ja ocupada; nao assumimos que ele seja o unico
+	# evento, porque o motor pode (corretamente) tambem concluir Game Over
+	# na mesma tentativa.
+	state.waiting_slots[0].vehicle_id = "blue_car"
+	state.vehicles["blue_car"].status = VehicleState.WAITING
+	var result: Dictionary = GameEngine.try_send_vehicle_to_waiting_slot(state, "green_car")
+	var events: Array = result["events"]
+	var result_state: GameState = result["state"]
+	var has_no_slot_event := false
+	for item: Variant in events:
+		var event: GameEvent = item as GameEvent
+		if event != null and event.type == "NoWaitingSlotAvailable":
+			has_no_slot_event = true
+	assert(has_no_slot_event)
+	assert(result_state.moves == 0)
 
 func _test_vehicle_cells_use_footprint() -> void:
 	var level := LevelDefinition.new(

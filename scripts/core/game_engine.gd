@@ -36,7 +36,7 @@ static func try_send_vehicle_to_waiting_slot(state: GameState, vehicle_id: Strin
 	vehicle.status = VehicleState.WAITING
 	slot.vehicle_id = vehicle.id
 	next_state.moves += 1
-	events.append(GameEvent.new("VehicleExited", {"vehicle_id": vehicle.id, "exit_direction": vehicle.exit_direction}))
+	events.append(GameEvent.new("VehicleExited", {"vehicle_id": vehicle.id, "exit_direction": ExitDirection.to_string_id(vehicle.exit_direction)}))
 	events.append(GameEvent.new("VehicleParked", {"vehicle_id": vehicle.id, "slot_index": slot.index}))
 	process_pending_boarding(next_state, events)
 	update_terminal_status(next_state, events)
@@ -77,20 +77,22 @@ static func get_exit_path_cells(state: GameState, vehicle: VehicleState) -> Arra
 		min_y = mini(min_y, cell.y)
 		max_y = maxi(max_y, cell.y)
 
+	# A fonte oficial da direcao e sempre vehicle.exit_direction (o enum
+	# tipado); esta funcao nunca olha rotacao visual nem a seta.
 	match vehicle.exit_direction:
-		"up":
+		ExitDirection.Value.UP:
 			for y: int in range(min_y - 1, -1, -1):
 				for x: int in range(min_x, max_x + 1):
 					path.append(Vector2i(x, y))
-		"down":
+		ExitDirection.Value.DOWN:
 			for y: int in range(max_y + 1, state.board_rows):
 				for x: int in range(min_x, max_x + 1):
 					path.append(Vector2i(x, y))
-		"left":
+		ExitDirection.Value.LEFT:
 			for x: int in range(min_x - 1, -1, -1):
 				for y: int in range(min_y, max_y + 1):
 					path.append(Vector2i(x, y))
-		"right":
+		ExitDirection.Value.RIGHT:
 			for x: int in range(max_x + 1, state.board_cols):
 				for y: int in range(min_y, max_y + 1):
 					path.append(Vector2i(x, y))

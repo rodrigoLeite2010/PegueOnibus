@@ -27,16 +27,26 @@ func _spawn_preview_vehicles() -> void:
 	for child: Node in vehicles_root.get_children():
 		child.queue_free()
 	for item: Dictionary in PREVIEW_ITEMS:
-		var vehicle := VehicleState.new(
+		var direction: String = item["direction"]
+		# VehicleState nao aceita mais argumentos posicionais soltos: agora ele
+		# e construido a partir de uma VehicleDefinition (mesma API usada pelo
+		# GameEngine). Orientacao e derivada da direcao de saida, exatamente
+		# como as fases em JSON fazem (left/right -> horizontal, up/down ->
+		# vertical).
+		var orientation: String = "horizontal" if direction == "left" or direction == "right" else "vertical"
+		var definition := VehicleDefinition.new(
 			item["id"],
+			"car",
 			item["color_id"],
 			4,
-			int(item["rows"]),
-			int(item["cols"]),
 			int(item["row"]),
 			int(item["col"]),
-			item["direction"]
+			orientation,
+			direction,
+			int(item["rows"]),
+			int(item["cols"])
 		)
+		var vehicle := VehicleState.new(definition)
 		var vehicle_node := preload("res://scenes/game/Vehicle.tscn").instantiate() as VehicleController
 		vehicle_node.setup_from_state(vehicle, CELL_SIZE)
 		vehicles_root.add_child(vehicle_node)

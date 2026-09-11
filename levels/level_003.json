@@ -1,13 +1,72 @@
 {
   "id": 3,
-  "waiting_slots": 3,
-  "board": {"rows": 8, "cols": 7},
-  "passengers": ["red","red","yellow","yellow","green","green","purple","purple","orange","orange"],
+  "waiting_slots": 5,
+  "board": {
+    "rows": 8,
+    "cols": 7
+  },
+  "passengers": [
+    "red",
+    "red",
+    "yellow",
+    "yellow",
+    "green",
+    "green",
+    "purple",
+    "purple",
+    "orange",
+    "orange"
+  ],
   "vehicles": [
-    {"id":"red_car","type":"car","color":"red","capacity":2,"row":5,"col":2,"orientation":"horizontal","exit_direction":"left"},
-    {"id":"yellow_car","type":"car","color":"yellow","capacity":2,"row":2,"col":3,"orientation":"vertical","exit_direction":"up"},
-    {"id":"green_car","type":"car","color":"green","capacity":2,"row":4,"col":4,"orientation":"vertical","exit_direction":"down"},
-    {"id":"purple_car","type":"car","color":"purple","capacity":2,"row":1,"col":2,"orientation":"horizontal","exit_direction":"right"},
-    {"id":"orange_car","type":"car","color":"orange","capacity":2,"row":6,"col":3,"orientation":"horizontal","exit_direction":"right"}
+    {
+      "id": "red_car",
+      "type": "car",
+      "color": "red",
+      "capacity": 2,
+      "row": 5,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "left"
+    },
+    {
+      "id": "yellow_car",
+      "type": "car",
+      "color": "yellow",
+      "capacity": 2,
+      "row": 2,
+      "col": 3,
+      "orientation": "vertical",
+      "exit_direction": "up"
+    },
+    {
+      "id": "green_car",
+      "type": "car",
+      "color": "green",
+      "capacity": 2,
+      "row": 4,
+      "col": 4,
+      "orientation": "vertical",
+      "exit_direction": "down"
+    },
+    {
+      "id": "purple_car",
+      "type": "car",
+      "color": "purple",
+      "capacity": 2,
+      "row": 1,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "right"
+    },
+    {
+      "id": "orange_car",
+      "type": "car",
+      "color": "orange",
+      "capacity": 2,
+      "row": 6,
+      "col": 3,
+      "orientation": "horizontal",
+      "exit_direction": "right"
+    }
   ]
 }

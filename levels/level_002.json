@@ -1,12 +1,60 @@
 {
   "id": 2,
-  "waiting_slots": 4,
-  "board": {"rows": 7, "cols": 7},
-  "passengers": ["purple","purple","orange","orange","pink","pink","blue","blue"],
+  "waiting_slots": 5,
+  "board": {
+    "rows": 7,
+    "cols": 7
+  },
+  "passengers": [
+    "purple",
+    "purple",
+    "orange",
+    "orange",
+    "pink",
+    "pink",
+    "blue",
+    "blue"
+  ],
   "vehicles": [
-    {"id":"purple_car","type":"car","color":"purple","capacity":2,"row":4,"col":2,"orientation":"horizontal","exit_direction":"left"},
-    {"id":"orange_car","type":"car","color":"orange","capacity":2,"row":2,"col":3,"orientation":"vertical","exit_direction":"up"},
-    {"id":"pink_car","type":"car","color":"pink","capacity":2,"row":3,"col":4,"orientation":"vertical","exit_direction":"down"},
-    {"id":"blue_car","type":"car","color":"blue","capacity":2,"row":1,"col":2,"orientation":"horizontal","exit_direction":"right"}
+    {
+      "id": "purple_car",
+      "type": "car",
+      "color": "purple",
+      "capacity": 2,
+      "row": 4,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "left"
+    },
+    {
+      "id": "orange_car",
+      "type": "car",
+      "color": "orange",
+      "capacity": 2,
+      "row": 2,
+      "col": 3,
+      "orientation": "vertical",
+      "exit_direction": "up"
+    },
+    {
+      "id": "pink_car",
+      "type": "car",
+      "color": "pink",
+      "capacity": 2,
+      "row": 3,
+      "col": 4,
+      "orientation": "vertical",
+      "exit_direction": "down"
+    },
+    {
+      "id": "blue_car",
+      "type": "car",
+      "color": "blue",
+      "capacity": 2,
+      "row": 1,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "right"
+    }
   ]
 }

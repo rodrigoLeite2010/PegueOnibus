@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="VehicleVisualResource" format=3 uid="uid://b8rj0uvhvwuo1"]
+
+[ext_resource type="PackedScene" uid="uid://diwnn3bd5fhpt" path="res://scenes/vehicles/Bus.tscn" id="1_in37n"]
+[ext_resource type="Script" uid="uid://org588sh2qjl" path="res://scripts/game/vehicle_visual_resource.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+id = "bus_3d"
+color_id = ""
+model_scene = ExtResource("1_in37n")
+model_scale = 0.002427
+model_offset = Vector3(0, 0.201, 0)
+model_rotation_degrees = Vector3(0, 90, 0)
+collider_height = 1.1
+door_offset = Vector3(0, 0, -0.5)

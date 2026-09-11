@@ -13,7 +13,7 @@ var occupied_seats: int
 var row: int
 var col: int
 var orientation: String
-var exit_direction: String
+var exit_direction: ExitDirection.Value
 var footprint_rows: int
 var footprint_cols: int
 var status: String

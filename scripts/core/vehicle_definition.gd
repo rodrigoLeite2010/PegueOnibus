@@ -8,7 +8,7 @@ var capacity: int
 var row: int
 var col: int
 var orientation: String
-var exit_direction: String
+var exit_direction: ExitDirection.Value
 var footprint_rows: int
 var footprint_cols: int
 
@@ -20,7 +20,7 @@ func _init(
 	p_row: int = 0,
 	p_col: int = 0,
 	p_orientation: String = "vertical",
-	p_exit_direction: String = "up",
+	p_exit_direction: Variant = ExitDirection.Value.UP,
 	p_footprint_rows: int = 0,
 	p_footprint_cols: int = 0
 ) -> void:
@@ -31,7 +31,9 @@ func _init(
 	row = p_row
 	col = p_col
 	orientation = p_orientation
-	exit_direction = p_exit_direction
+	# Aceita tanto o texto historico ("up"/"down"/...) usado pelo JSON de fases
+	# e pelos testes, quanto o enum tipado ja pronto -- ver ExitDirection.coerce.
+	exit_direction = ExitDirection.coerce(p_exit_direction)
 	footprint_rows = p_footprint_rows
 	footprint_cols = p_footprint_cols
 	_apply_default_footprint_if_needed()

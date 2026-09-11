@@ -1,8 +1,9 @@
-[gd_scene load_steps=5 format=3 uid="uid://pega_passageiro_game"]
+[gd_scene load_steps=6 format=3 uid="uid://pega_passageiro_game"]
 
 [ext_resource type="Script" path="res://scripts/game/game_controller.gd" id="1_game"]
 [ext_resource type="PackedScene" path="res://scenes/game/Board.tscn" id="2_board"]
 [ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="3_hud"]
+[ext_resource type="PackedScene" path="res://scenes/environment/GameEnvironment.tscn" id="4_environment"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -21,6 +22,9 @@ environment = SubResource("Environment_main")
 transform = Transform3D(0.707107, -0.353553, 0.612372, 0, 0.866025, 0.5, -0.707107, -0.353553, 0.612372, 0, 8, 4)
 light_energy = 1.18
 shadow_enabled = true
+shadow_blur = 2.2
+
+[node name="GameEnvironment" parent="." instance=ExtResource("4_environment")]
 
 [node name="Board" parent="." instance=ExtResource("2_board")]
 

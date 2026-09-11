@@ -1,0 +1,13 @@
+Modern layout pass based on the supplied reference image
+
+Changed:
+- HUD passenger queue is now a compact single top row instead of a tall 3-row block.
+- More vertical space is returned to the 3D board.
+- Boarding slots are more square, darker, and show a green + while empty.
+- Remaining passenger count is shown in white below/forward of the parked vehicle.
+- Camera unsafe areas updated for the smaller HUD.
+- Board palette modernized slightly.
+- Procedural phases can generate up to 18 vehicles and reuse the existing color palette, so later phases are visibly denser.
+- Existing vehicle movement/boarding/game-engine rules are unchanged.
+
+Important: test a generated phase such as 39 first. This package was edited statically; Godot was not available in the execution environment to launch the project.

@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://if4e647uu743"]
+
+[ext_resource type="PackedScene" uid="uid://cudueuwds23qg" path="res://assets/models/vehicles/medium_car.glb" id="1_8hyko"]
+[ext_resource type="Script" uid="uid://84do6gehllp4" path="res://scripts/game/medium_car_visual.gd" id="2_aq8lw"]
+
+[node name="CarMedium" unique_id=1178083320 instance=ExtResource("1_8hyko")]
+script = ExtResource("2_aq8lw")
+
+[node name="BoardingPoint" type="Marker3D" parent="." index="1" unique_id=465759364]

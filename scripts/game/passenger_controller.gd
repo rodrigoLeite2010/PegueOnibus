@@ -16,6 +16,8 @@ const COLOR_MAP := {
 var _body_root: Node3D
 var _leg_pivots: Array[Node3D] = []
 var _arm_pivots: Array[Node3D] = []
+var _idle_tween: Tween
+var _walk_tween: Tween
 
 func _ready() -> void:
 	_build()
@@ -24,6 +26,10 @@ func setup(p_color_id: String) -> void:
 	color_id = p_color_id
 	_build()
 
+# Velocidade dobrada em relacao ao original (0.57s -> 0.285s do total ate
+# sumir dentro do carro). Uma rodada seguinte tentou dobrar de novo (~0.15s)
+# mas ficou rapido demais e foi revertida a pedido -- fica neste ponto. O
+# ciclo de passada acompanha a mesma proporcao (ver _start_walk_cycle).
 func walk_to_and_board(target: Vector3) -> void:
 	# Apresentacao apenas: a regra/assentos ja foram confirmados pelo GameEngine.
 	# O boneco agora percorre uma rota curta em 3 trechos, vira para a direcao
@@ -34,30 +40,31 @@ func walk_to_and_board(target: Vector3) -> void:
 	middle.y += 0.025
 
 	_face_towards(middle)
-	_start_walk_cycle()
+	_start_walk_cycle(0.0425)
 
 	var tween := create_tween()
 	tween.set_trans(Tween.TRANS_SINE)
 	tween.set_ease(Tween.EASE_IN_OUT)
-	tween.tween_property(self, "position", middle, 0.20)
-	tween.tween_property(self, "position", approach, 0.16)
+	tween.tween_property(self, "position", middle, 0.045)
+	tween.tween_property(self, "position", approach, 0.035)
 	await tween.finished
 
 	_face_towards(target)
 	var hop := create_tween()
 	hop.set_trans(Tween.TRANS_QUAD)
 	hop.set_ease(Tween.EASE_OUT)
-	hop.parallel().tween_property(self, "position", target + Vector3(0.0, 0.19, 0.0), 0.10)
-	hop.parallel().tween_property(self, "scale", Vector3(0.78, 0.78, 0.78), 0.10)
+	hop.parallel().tween_property(self, "position", target + Vector3(0.0, 0.19, 0.0), 0.025)
+	hop.parallel().tween_property(self, "scale", Vector3(0.78, 0.78, 0.78), 0.025)
 	await hop.finished
 
 	var enter := create_tween()
 	enter.set_trans(Tween.TRANS_BACK)
 	enter.set_ease(Tween.EASE_IN)
-	enter.parallel().tween_property(self, "position", target + Vector3(0.0, 0.10, -0.05), 0.11)
-	enter.parallel().tween_property(self, "scale", Vector3(0.06, 0.06, 0.06), 0.11)
+	enter.parallel().tween_property(self, "position", target + Vector3(0.0, 0.10, -0.05), 0.025)
+	enter.parallel().tween_property(self, "scale", Vector3(0.06, 0.06, 0.06), 0.025)
 	await enter.finished
 	_stop_walk_cycle()
+	_kill_idle()
 	queue_free()
 
 func _face_towards(target: Vector3) -> void:
@@ -67,8 +74,14 @@ func _face_towards(target: Vector3) -> void:
 	rotation.y = atan2(delta.x, delta.z)
 
 func _build() -> void:
+	_kill_idle()
+	_stop_walk_cycle()
+	# free() (nao queue_free()) e importante aqui: setup() chama _build() logo
+	# depois que _ready() ja rodou um _build() com a cor padrao, e com
+	# queue_free() os dois corpos ficavam sobrepostos por um frame antes da
+	# remocao diferida acontecer.
 	for child: Node in get_children():
-		child.queue_free()
+		child.free()
 
 	_body_root = Node3D.new()
 	_body_root.name = "BodyRoot"
@@ -170,33 +183,69 @@ func _build() -> void:
 
 	# Leve bounce idle para nao parecer uma peca totalmente estatica.
 	var idle := create_tween()
+	_idle_tween = idle
 	idle.set_loops()
 	idle.set_trans(Tween.TRANS_SINE)
 	idle.set_ease(Tween.EASE_IN_OUT)
 	idle.tween_property(_body_root, "position:y", 0.018, 0.34)
 	idle.tween_property(_body_root, "position:y", 0.0, 0.34)
 
-func _start_walk_cycle() -> void:
+# step_duration e o tempo de CADA quarto de passada. walk_to_and_board() usa
+# um valor menor (passada mais rapida, ver acima); step_to() (fila 3D
+# avancando um lugar) continua no ritmo original, sem pressa.
+func _start_walk_cycle(step_duration: float = 0.085) -> void:
 	if _leg_pivots.size() < 2 or _arm_pivots.size() < 2:
 		return
+	_stop_walk_cycle()
 	var cycle := create_tween()
+	_walk_tween = cycle
 	cycle.set_loops()
 	cycle.set_trans(Tween.TRANS_SINE)
 	cycle.set_ease(Tween.EASE_IN_OUT)
-	cycle.tween_property(_leg_pivots[0], "rotation_degrees:x", 28.0, 0.085)
-	cycle.parallel().tween_property(_leg_pivots[1], "rotation_degrees:x", -28.0, 0.085)
-	cycle.parallel().tween_property(_arm_pivots[0], "rotation_degrees:x", -22.0, 0.085)
-	cycle.parallel().tween_property(_arm_pivots[1], "rotation_degrees:x", 22.0, 0.085)
-	cycle.tween_property(_leg_pivots[0], "rotation_degrees:x", -28.0, 0.085)
-	cycle.parallel().tween_property(_leg_pivots[1], "rotation_degrees:x", 28.0, 0.085)
-	cycle.parallel().tween_property(_arm_pivots[0], "rotation_degrees:x", 22.0, 0.085)
-	cycle.parallel().tween_property(_arm_pivots[1], "rotation_degrees:x", -22.0, 0.085)
+	cycle.tween_property(_leg_pivots[0], "rotation_degrees:x", 28.0, step_duration)
+	cycle.parallel().tween_property(_leg_pivots[1], "rotation_degrees:x", -28.0, step_duration)
+	cycle.parallel().tween_property(_arm_pivots[0], "rotation_degrees:x", -22.0, step_duration)
+	cycle.parallel().tween_property(_arm_pivots[1], "rotation_degrees:x", 22.0, step_duration)
+	cycle.tween_property(_leg_pivots[0], "rotation_degrees:x", -28.0, step_duration)
+	cycle.parallel().tween_property(_leg_pivots[1], "rotation_degrees:x", 28.0, step_duration)
+	cycle.parallel().tween_property(_arm_pivots[0], "rotation_degrees:x", 22.0, step_duration)
+	cycle.parallel().tween_property(_arm_pivots[1], "rotation_degrees:x", -22.0, step_duration)
 
 func _stop_walk_cycle() -> void:
+	if _walk_tween != null and _walk_tween.is_valid():
+		_walk_tween.kill()
+	_walk_tween = null
 	for pivot: Node3D in _leg_pivots:
 		pivot.rotation_degrees = Vector3.ZERO
 	for pivot: Node3D in _arm_pivots:
 		pivot.rotation_degrees = Vector3.ZERO
+
+func _kill_idle() -> void:
+	if _idle_tween != null and _idle_tween.is_valid():
+		_idle_tween.kill()
+	_idle_tween = null
+
+# Passo curto da fila avancando (FASE C): reaproveita o ciclo de caminhada
+# por um instante, sem repetir toda a coreografia de embarque completo.
+func step_to(target: Vector3) -> void:
+	if position.distance_to(target) < 0.01:
+		return
+	_face_towards(target)
+	_start_walk_cycle()
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_SINE)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(self, "position", target, 0.26)
+	await tween.finished
+	_stop_walk_cycle()
+
+# Usado quando um novo boneco aparece no fim da fila 3D visivel.
+func pop_in() -> void:
+	scale = Vector3.ZERO
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_ease(Tween.EASE_OUT)
+	tween.tween_property(self, "scale", Vector3.ONE, 0.22)
 
 func _material(color: Color, roughness: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()

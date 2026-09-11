@@ -10,7 +10,7 @@ var vehicles: Array[VehicleDefinition]
 
 func _init(
 	p_id: int = 1,
-	p_waiting_slots: int = 3,
+	p_waiting_slots: int = 5,
 	p_board_rows: int = 9,
 	p_board_cols: int = 7,
 	p_passengers: Array[String] = [],
@@ -48,7 +48,7 @@ static func from_dictionary(data: Dictionary) -> LevelDefinition:
 	var board: Dictionary = data.get("board", {})
 	return LevelDefinition.new(
 		data.get("id", 1),
-		data.get("waiting_slots", 3),
+		data.get("waiting_slots", 5),
 		board.get("rows", 9),
 		board.get("cols", 7),
 		parsed_passengers,

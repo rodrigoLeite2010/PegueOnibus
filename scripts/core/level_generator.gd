@@ -54,10 +54,10 @@ static func generate(level_number: int, rng_seed: int = -1) -> LevelDefinition:
 
 static func difficulty_params(level_number: int) -> Dictionary:
 	var n: int = maxi(level_number, 1)
-	var vehicle_count: int = clampi(6 + int((n - 6) / 3.0), 5, COLORS.size())
-	var board_rows: int = clampi(8 + int((n - 6) / 4.0), 7, 10)
-	var board_cols: int = clampi(7 + int((n - 6) / 5.0), 6, 9)
-	var waiting_slots: int = clampi(4 - int((n - 6) / 8.0), 2, 4)
+	var vehicle_count: int = clampi(7 + int((n - 6) / 2.4), 6, 18)
+	var board_rows: int = clampi(9 + int((n - 6) / 6.0), 8, 12)
+	var board_cols: int = clampi(8 + int((n - 6) / 8.0), 7, 10)
+	var waiting_slots: int = 5
 	var van_chance: float = 0.0
 	if n >= 8:
 		van_chance = clampf(float(n - 8) * 0.06, 0.0, 0.45)
@@ -82,23 +82,25 @@ static func _try_generate(level_number: int, rng: RandomNumberGenerator, board_p
 	var van_chance: float = params["van_chance"]
 	var bus_chance: float = params["bus_chance"]
 
+	# Em fases densas ha mais veiculos do que cores. Em vez de limitar o
+	# tabuleiro a 7 veiculos, repetimos uma paleta embaralhada. Isso deixa a
+	# tela cheia como a referencia sem criar cores novas ou quebrar a regra.
 	var colors: Array[String] = _shuffled(COLORS, rng)
-	colors = colors.slice(0, vehicle_count)
 
 	var specs: Array[Dictionary] = []
 	for index: int in range(vehicle_count):
-		var color_id: String = colors[index]
-		var type_id: String = "car"
-		var capacity: int = 2
+		var color_id: String = colors[index % colors.size()]
+		var type_id: String = "small_car"
+		var capacity: int = VehicleCapacityTable.default_for(type_id)
 		var length: int = 2
 		var roll: float = rng.randf()
 		if roll < bus_chance:
 			type_id = "bus"
-			capacity = 4
+			capacity = VehicleCapacityTable.default_for(type_id)
 			length = 3
 		elif roll < bus_chance + van_chance:
-			type_id = "van"
-			capacity = 3
+			type_id = "medium_car"
+			capacity = VehicleCapacityTable.default_for(type_id)
 			length = 3
 		var direction: String = DIRECTIONS[rng.randi_range(0, DIRECTIONS.size() - 1)]
 		specs.append({

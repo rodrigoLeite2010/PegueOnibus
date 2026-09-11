@@ -1,14 +1,84 @@
 {
   "id": 4,
-  "waiting_slots": 4,
-  "board": {"rows": 8, "cols": 7},
-  "passengers": ["blue","blue","red","red","orange","orange","green","green","pink","pink","yellow","yellow"],
+  "waiting_slots": 5,
+  "board": {
+    "rows": 8,
+    "cols": 7
+  },
+  "passengers": [
+    "blue",
+    "blue",
+    "red",
+    "red",
+    "orange",
+    "orange",
+    "green",
+    "green",
+    "pink",
+    "pink",
+    "yellow",
+    "yellow"
+  ],
   "vehicles": [
-    {"id":"blue_car","type":"car","color":"blue","capacity":2,"row":5,"col":2,"orientation":"horizontal","exit_direction":"left"},
-    {"id":"red_car","type":"car","color":"red","capacity":2,"row":2,"col":3,"orientation":"vertical","exit_direction":"up"},
-    {"id":"orange_car","type":"car","color":"orange","capacity":2,"row":4,"col":4,"orientation":"vertical","exit_direction":"down"},
-    {"id":"green_car","type":"car","color":"green","capacity":2,"row":1,"col":2,"orientation":"horizontal","exit_direction":"right"},
-    {"id":"pink_car","type":"car","color":"pink","capacity":2,"row":6,"col":3,"orientation":"horizontal","exit_direction":"right"},
-    {"id":"yellow_car","type":"car","color":"yellow","capacity":2,"row":3,"col":1,"orientation":"vertical","exit_direction":"down"}
+    {
+      "id": "blue_car",
+      "type": "car",
+      "color": "blue",
+      "capacity": 2,
+      "row": 5,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "left"
+    },
+    {
+      "id": "red_car",
+      "type": "car",
+      "color": "red",
+      "capacity": 2,
+      "row": 2,
+      "col": 3,
+      "orientation": "vertical",
+      "exit_direction": "up"
+    },
+    {
+      "id": "orange_car",
+      "type": "car",
+      "color": "orange",
+      "capacity": 2,
+      "row": 4,
+      "col": 4,
+      "orientation": "vertical",
+      "exit_direction": "down"
+    },
+    {
+      "id": "green_car",
+      "type": "car",
+      "color": "green",
+      "capacity": 2,
+      "row": 1,
+      "col": 2,
+      "orientation": "horizontal",
+      "exit_direction": "right"
+    },
+    {
+      "id": "pink_car",
+      "type": "car",
+      "color": "pink",
+      "capacity": 2,
+      "row": 6,
+      "col": 3,
+      "orientation": "horizontal",
+      "exit_direction": "right"
+    },
+    {
+      "id": "yellow_car",
+      "type": "car",
+      "color": "yellow",
+      "capacity": 2,
+      "row": 3,
+      "col": 1,
+      "orientation": "vertical",
+      "exit_direction": "down"
+    }
   ]
 }

@@ -1,11 +1,20 @@
 [gd_scene format=3 uid="uid://c2ix4376ycu4c"]
 
 [ext_resource type="PackedScene" uid="uid://ykr5u03b7w6m" path="res://assets/models/vehicles/car_test.glb" id="1_8b8c1"]
+[ext_resource type="Script" uid="uid://btlh5ee0kr5e8" path="res://scripts/game/car_visual.gd" id="2_1p6fl"]
 
-[node name="CarSmall" instance=ExtResource("1_8b8c1")]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_445dv"]
+albedo_color = Color(0.2901961, 0.23921569, 1, 1)
 
-[node name="BoardingPoint" type="Marker3D" parent="." index="1"]
+[node name="CarSmall" unique_id=413342421 instance=ExtResource("1_8b8c1")]
+script = ExtResource("2_1p6fl")
+body_path = NodePath("Sketchfab_model/42b5c346c90f4e5988b1114bdca240f6_fbx/RootNode/forMayaAO_polySurface322/forMayaAO_polySurface322_forMayaAO_lambert17_0")
+
+[node name="forMayaAO_polySurface322_forMayaAO_lambert17_0" parent="Sketchfab_model/42b5c346c90f4e5988b1114bdca240f6_fbx/RootNode/forMayaAO_polySurface322" parent_id_path=PackedInt32Array(59821724) index="0" unique_id=374838546]
+surface_material_override/0 = SubResource("StandardMaterial3D_445dv")
+
+[node name="BoardingPoint" type="Marker3D" parent="." index="1" unique_id=929760949]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.035, 0.009, -0.07)
 
-[node name="SelectionPoint" type="Marker3D" parent="." index="2"]
+[node name="SelectionPoint" type="Marker3D" parent="." index="2" unique_id=794978797]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.03, 0)
