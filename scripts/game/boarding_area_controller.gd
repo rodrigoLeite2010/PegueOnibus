@@ -89,7 +89,7 @@ var _polish_row_width: float = 0.0
 # embarque fisica: os slots continuam sendo definidos pela regra (GameEngine
 # via waiting_slots_count), mas agora existe uma plataforma/rua visivel no
 # mesmo mundo 3D.
-func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_mode: bool, dock_width_scale: float = 1.0) -> void:
+func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_mode: bool, dock_width_scale: float = 1.0, dock_depth_scale: float = 1.0) -> void:
 	for child: Node in get_children():
 		child.free()
 
@@ -102,7 +102,7 @@ func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_m
 	# normal: _setup_normal() abaixo e byte-a-byte a MESMA funcao de antes da
 	# Etapa 2B/2C (nunca mais tocada desde entao, so movida de arquivo).
 	if polish_mode:
-		_setup_polish(waiting_slots_count, board_cols, cell_size, dock_width_scale)
+		_setup_polish(waiting_slots_count, board_cols, cell_size, dock_width_scale, dock_depth_scale)
 	else:
 		_setup_normal(waiting_slots_count, board_cols, cell_size)
 
@@ -406,7 +406,7 @@ func _setup_normal(waiting_slots_count: int, board_cols: int, cell_size: float) 
 # Marker3D Slot0..Slot3 exatamente no centro geometrico de cada retangulo
 # (o veiculo estacionado usa esse Marker3D direto como posicao final -- ver
 # GameController._process_vehicle_tap).
-func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, dock_width_scale: float = 1.0) -> void:
+func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, dock_width_scale: float = 1.0, dock_depth_scale: float = 1.0) -> void:
 	var count: int = mini(maxi(waiting_slots_count, 1), ACTIVE_BOARDING_SLOTS)
 	var board_width: float = float(board_cols) * cell_size
 
@@ -422,11 +422,20 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 	var effective_locked_width: float = POLISH_LOCKED_SLOT_WIDTH * dock_width_scale
 	var effective_gap: float = POLISH_SLOT_GAP * dock_width_scale
 
+	# ETAPA 8C (ticket secao 11): POLISH_SLOT_WIDTH (largura) ja nao tem
+	# folga sobrando (ver comentario acima) mas POLISH_SLOT_DEPTH (2.40) tem
+	# MUITA sobra -- o small_car so precisa de ~1 celula de profundidade real.
+	# dock_depth_scale reduz essa profundidade com seguranca (LARGE/950 e
+	# toda fase que nao passar o parametro usam 1.0 == comportamento de
+	# sempre). E o principal responsavel visual por "docks menores" nas
+	# fases SMALL, evitando reduzir a largura da vaga ativa.
+	var effective_depth: float = POLISH_SLOT_DEPTH * dock_depth_scale
+
 	# Fronteiras Z explicitas (em vez de "spacing"/formulas herdadas): a
 	# vaga fica logo acima do tabuleiro (borda proxima = -POLISH_SLOT_GAP_TO_BOARD),
 	# com POLISH_SLOT_DEPTH de profundidade real.
 	var slot_row_near_z: float = -POLISH_SLOT_GAP_TO_BOARD
-	var slot_row_far_z: float = slot_row_near_z - POLISH_SLOT_DEPTH
+	var slot_row_far_z: float = slot_row_near_z - effective_depth
 	var slot_row_center_z: float = (slot_row_near_z + slot_row_far_z) * 0.5
 	# Passageiros comecam logo depois da borda de tras das vagas (curta
 	# transicao pedida no item 5); a fileira MAIS funda de passageiros
@@ -512,7 +521,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		var frame := MeshInstance3D.new()
 		frame.name = "Frame"
 		var frame_mesh := BoxMesh.new()
-		frame_mesh.size = Vector3(frame_width, 0.02, POLISH_SLOT_DEPTH)
+		frame_mesh.size = Vector3(frame_width, 0.02, effective_depth)
 		frame.mesh = frame_mesh
 		frame.position = Vector3(0.0, -0.32, 0.0)
 		var frame_material := StandardMaterial3D.new()
@@ -524,7 +533,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		var pad := MeshInstance3D.new()
 		pad.name = "Pad"
 		var pad_mesh := BoxMesh.new()
-		pad_mesh.size = Vector3(frame_width - 0.12, 0.026, POLISH_SLOT_DEPTH - 0.16)
+		pad_mesh.size = Vector3(frame_width - 0.12, 0.026, maxf(effective_depth - 0.16, 0.2))
 		pad.mesh = pad_mesh
 		pad.position = Vector3(0.0, -0.285, 0.0)
 		var pad_material := StandardMaterial3D.new()
@@ -532,14 +541,14 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		pad_material.roughness = 0.92
 		pad.material_override = pad_material
 		marker.add_child(pad)
-		_add_slot_shadow(marker, frame_width)
-		_add_slot_corner_caps(marker, frame_width, POLISH_SLOT_DEPTH)
+		_add_slot_shadow(marker, frame_width, effective_depth)
+		_add_slot_corner_caps(marker, frame_width, effective_depth)
 
 		var stop_line := MeshInstance3D.new()
 		var stop_mesh := BoxMesh.new()
 		stop_mesh.size = Vector3(frame_width - 0.24, 0.018, 0.035)
 		stop_line.mesh = stop_mesh
-		stop_line.position = Vector3(0.0, -0.258, POLISH_SLOT_DEPTH * -0.32)
+		stop_line.position = Vector3(0.0, -0.258, effective_depth * -0.32)
 		var stop_material := StandardMaterial3D.new()
 		stop_material.albedo_color = Color("#87f7aa")
 		stop_line.material_override = stop_material
@@ -577,7 +586,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		var slot_plus := Label3D.new()
 		slot_plus.name = "SlotPlus"
 		slot_plus.text = "+"
-		slot_plus.font_size = 60
+		slot_plus.font_size = roundi(60.0 * dock_depth_scale)
 		slot_plus.outline_size = 12
 		slot_plus.modulate = Color("#63ef91")
 		slot_plus.outline_modulate = Color(0.08, 0.16, 0.12, 0.85)
@@ -603,7 +612,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		# contraste em vez de so pela cor do piso.
 		var frame := MeshInstance3D.new()
 		var frame_mesh := BoxMesh.new()
-		frame_mesh.size = Vector3(effective_locked_width, 0.02, POLISH_SLOT_DEPTH)
+		frame_mesh.size = Vector3(effective_locked_width, 0.02, effective_depth)
 		frame.mesh = frame_mesh
 		frame.position = Vector3(0.0, -0.32, 0.0)
 		var frame_material := StandardMaterial3D.new()
@@ -614,7 +623,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 
 		var pad := MeshInstance3D.new()
 		var pad_mesh := BoxMesh.new()
-		pad_mesh.size = Vector3(maxf(effective_locked_width - 0.12, 0.2), 0.026, POLISH_SLOT_DEPTH - 0.16)
+		pad_mesh.size = Vector3(maxf(effective_locked_width - 0.12, 0.2), 0.026, maxf(effective_depth - 0.16, 0.2))
 		pad.mesh = pad_mesh
 		pad.position = Vector3(0.0, -0.285, 0.0)
 		var pad_material := StandardMaterial3D.new()
@@ -622,7 +631,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 		pad_material.roughness = 0.92
 		pad.material_override = pad_material
 		marker.add_child(pad)
-		_add_slot_shadow(marker, effective_locked_width)
+		_add_slot_shadow(marker, effective_locked_width, effective_depth)
 
 		_add_procedural_padlock(marker, Vector3(0.0, 0.62, 0.0))
 
@@ -644,10 +653,10 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, 
 # ETAPA 6 (item 7, vagas ativas: "pequena sombra"): sombra achatada sob a
 # vaga inteira -- reforca a leitura de vaga individual sem custar mais que
 # uma mesh estatica extra por vaga (4 no total, custo desprezivel).
-func _add_slot_shadow(marker: Marker3D, width: float) -> void:
+func _add_slot_shadow(marker: Marker3D, width: float, depth: float = POLISH_SLOT_DEPTH) -> void:
 	var shadow := MeshInstance3D.new()
 	var shadow_mesh := BoxMesh.new()
-	shadow_mesh.size = Vector3(width + 0.10, 0.01, POLISH_SLOT_DEPTH + 0.10)
+	shadow_mesh.size = Vector3(width + 0.10, 0.01, depth + 0.10)
 	shadow.mesh = shadow_mesh
 	shadow.position = Vector3(0.0, -0.335, 0.02)
 	var shadow_material := StandardMaterial3D.new()
