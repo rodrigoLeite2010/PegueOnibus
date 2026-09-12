@@ -33,14 +33,21 @@ const HUD_BOTTOM_UNSAFE_FRACTION := 160.0 / 1280.0
 # borda (o que arrisca cortar 1-2px dependendo do arredondamento).
 const CAMERA_FRAME_SAFETY_FRACTION := 0.02
 
-# --- ETAPA 2 do Polish Test (composicao visual) ---
-# Tudo abaixo so entra em vigor quando state.level_id == POLISH_TEST_LEVEL_ID
-# (a fase 950, carregada exclusivamente por scenes/game/PolishTest.tscn via
-# scripts/game/polish_test_launcher.gd). Nenhuma fase normal passa por esse
-# id, entao a aparencia de todas as outras fases fica exatamente igual a
-# antes desta etapa -- ver os "if is_polish_test" em _setup_camera() e
-# _spawn_vehicles().
+# --- ETAPA 8: perfil de apresentacao (presentation_profile) ---
+# Substitui as comparacoes espalhadas "state.level_id == 950" por uma unica
+# fonte: is_polished, derivado de presentation_profile, calculado UMA vez por
+# fase carregada (ver _load_level_number -> _resolve_presentation_profile()).
+# POLISHED_LEVEL_IDS e a UNICA lista que decide quais fases usam a
+# apresentacao polida -- hoje: a PolishTest (950, sempre, usada como teste de
+# stress) e as 3 fases reais piloto desta etapa (1, 2, 3). Todas as demais
+# fases continuam CLASSIC, sem nenhuma mudanca de comportamento/aparencia.
+# IMPORTANTE (ticket Etapa 8, secao 4): isto migra so APRESENTACAO (camera,
+# docks, fila 3D, efeitos, HUD) -- NUNCA conteudo (veiculos, capacidades,
+# vagas, dificuldade, board ou regras), que continuam vindo do proprio
+# level_XXX.json de cada fase, sem nenhuma alteracao aqui.
+enum PresentationProfile { CLASSIC, POLISHED }
 const POLISH_TEST_LEVEL_ID := 950
+const POLISHED_LEVEL_IDS: Array[int] = [1, 2, 3, POLISH_TEST_LEVEL_ID]
 # ETAPA 2B: pitch ainda mais raso (-50 -> -44, dentro da faixa -42..-46
 # pedida) para mostrar claramente a lateral dos veiculos, especialmente dos
 # onibus -- o feedback da Etapa 2 foi "ainda parece muito de cima".
@@ -65,7 +72,7 @@ const POLISH_WIDTH_FILL_FRACTION := 1.0
 # (era exatamente o bug: a Etapa 2B usava a mesma BOARDING_AREA_DEPTH das
 # fases normais, 3.05, mas com 40 bonecos as ultimas fileiras iam ate
 # Z=-4.38 -- 1.33 alem do limite -- ou seja, apareciam ATRAS/dentro da faixa
-# do HUD superior). So entra na formula da camera quando is_polish_test;
+# do HUD superior). So entra na formula da camera quando is_polished;
 # BOARDING_AREA_DEPTH continua exatamente igual para toda fase normal.
 const POLISH_BOARDING_AREA_DEPTH := 5.5
 
@@ -87,10 +94,16 @@ const POLISH_BOARDING_AREA_DEPTH := 5.5
 # comportamento e byte-a-byte o mesmo, so mudou de arquivo.
 var _polish_effects: PolishEffectsController
 
+# ETAPA 8: unica fonte de verdade sobre a apresentacao da fase atual --
+# recalculado a cada _load_level_number(), nunca inferido de state.level_id
+# em nenhum outro lugar do arquivo.
+var presentation_profile: PresentationProfile = PresentationProfile.CLASSIC
+var is_polished: bool = false
+
 # ETAPA 7 (refatoracao segura): instanciado em _ready(), nunca editado na
 # cena .tscn -- ver PassengerCrowdController. setup() e chamado de novo a
 # cada _load_level_number() (ao contrario de _polish_effects, que so muda de
-# fase quando is_polish_test/board_cols mudam). Reune os bonecos 3D da fila
+# fase quando is_polished/board_cols mudam). Reune os bonecos 3D da fila
 # de passageiros que antes eram metodos privados deste script; o
 # comportamento e byte-a-byte o mesmo, so mudou de arquivo.
 var _passenger_crowd: PassengerCrowdController
@@ -145,6 +158,9 @@ var _camera_shake_tween: Tween
 # HUDController.show_polish_test_coin_counter). Fora da fase 950 nunca e
 # incrementado nem lido.
 var _polish_local_coin_balance: int = 0
+func _resolve_presentation_profile(level_id: int) -> PresentationProfile:
+	return PresentationProfile.POLISHED if POLISHED_LEVEL_IDS.has(level_id) else PresentationProfile.CLASSIC
+
 func _ready() -> void:
 	hud.restart_requested.connect(restart_level)
 	hud.continue_requested.connect(_on_continue_requested)
@@ -232,20 +248,21 @@ func _load_level_number(level_number: int) -> void:
 		# anterior.
 		level = LevelGenerator.generate(level_number)
 	state = GameEngine.create_state(level)
-	var is_polish_test_level: bool = state.level_id == POLISH_TEST_LEVEL_ID
-	if is_polish_test_level:
+	presentation_profile = _resolve_presentation_profile(state.level_id)
+	is_polished = presentation_profile == PresentationProfile.POLISHED
+	if is_polished:
 		_apply_polish_environment()
 	else:
 		_restore_default_environment()
-	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polish_test_level)
-	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polish_test_level)
-	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polish_test_level)
-	_passenger_crowd.setup(passengers_root, boarding_area, is_polish_test_level, state.board_cols, CELL_SIZE)
+	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
+	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
+	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished)
+	_passenger_crowd.setup(passengers_root, boarding_area, is_polished, state.board_cols, CELL_SIZE)
 	_passenger_crowd.rebuild_dolls(state.passenger_queue)
 	_spawn_vehicles()
 	_refresh_selectable_highlights()
 	_setup_camera()
-	hud.update_state(state, "Toque em um veiculo livre.", _level_position_text(), -1)
+	hud.update_state(state, "Toque em um veiculo livre.", _level_position_text(), -1, is_polished)
 	print("Pega Passageiro - fase %s carregada." % state.level_id)
 
 func _level_position_text() -> String:
@@ -333,15 +350,14 @@ func _spawn_vehicles() -> void:
 	for child: Node in vehicles_root.get_children():
 		child.free()
 	vehicle_nodes.clear()
-	var is_polish_test: bool = state.level_id == POLISH_TEST_LEVEL_ID
 	for vehicle_id: String in state.vehicles.keys():
 		var vehicle: VehicleState = state.vehicles[vehicle_id]
 		if vehicle.status != VehicleState.ON_BOARD:
 			continue
 		var vehicle_node := preload("res://scenes/game/Vehicle.tscn").instantiate() as VehicleController
 		vehicles_root.add_child(vehicle_node)
-		vehicle_node.setup_from_state(vehicle, CELL_SIZE, is_polish_test)
-		if is_polish_test:
+		vehicle_node.setup_from_state(vehicle, CELL_SIZE, is_polished)
+		if is_polished:
 			# ETAPA 2B: aumento bem maior que a Etapa 2 (que so dava +10% ao
 			# medium_car). Valores escolhidos na ponta CONSERVADORA de cada
 			# faixa pedida (small +30-40%, medium +35-45%, bus +25-35%) porque
@@ -411,12 +427,11 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 	var vehicle_node: VehicleController = vehicle_nodes.get(vehicle_id) as VehicleController
 	if vehicle_node == null:
 		return
-	# ETAPA 3 (Polish Test): so na fase 950, um veiculo em plena animacao
-	# "polida" (feedback de bloqueio, dirigindo, estacionando/bounce) ignora
-	# novos toques -- ver VehicleController.is_polish_busy(). Isolado por
-	# is_polish_test pra nao mudar nada no comportamento das fases normais.
-	var is_polish_test: bool = state.level_id == POLISH_TEST_LEVEL_ID
-	if is_polish_test and vehicle_node.is_polish_busy():
+	# ETAPA 3/8: presentation_profile decide isto agora (nao mais uma
+	# comparacao local com 950) -- qualquer fase POLISHED (950, 1, 2 ou 3)
+	# ignora novos toques durante animacao "polida" em andamento -- ver
+	# VehicleController.is_polish_busy().
+	if is_polished and vehicle_node.is_polish_busy():
 		return
 	# Rede de seguranca: com toques concorrentes, um segundo toque no MESMO
 	# veiculo (antes da primeira animacao dele terminar) chega aqui depois
@@ -434,26 +449,26 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 
 	if blocked:
 		_blocked_tap_count += 1
-		if is_polish_test:
+		if is_polished:
 			vehicle_node.animate_blocked_polished()
 		else:
 			vehicle_node.animate_blocked()
 		_camera_shake_blocked()
 		AudioManager.play_sfx("blocked")
 		AudioManager.vibrate(45)
-		hud.update_state(state, "Esse veiculo esta bloqueado.", _level_position_text())
+		hud.update_state(state, "Esse veiculo esta bloqueado.", _level_position_text(), -1, is_polished)
 		return
 	if no_slot:
 		vehicle_node.animate_no_slot()
 		AudioManager.vibrate(35)
-		hud.update_state(state, "As vagas de espera estao ocupadas.", _level_position_text())
+		hud.update_state(state, "As vagas de espera estao ocupadas.", _level_position_text(), -1, is_polished)
 		return
 
 	_begin_tap_animation()
-	if is_polish_test:
+	if is_polished:
 		vehicle_node.animate_valid_tap_polished()
-		# ETAPA 5, item 3: particula discreta na base do veiculo ao confirmar
-		# o toque -- so na fase 950.
+		# ETAPA 5/8: particula discreta na base do veiculo ao confirmar o
+		# toque -- em qualquer fase com presentation_profile POLISHED.
 		_polish_effects.tap_spark(vehicle_node.global_position)
 	else:
 		vehicle_node.animate_valid_tap()
@@ -485,7 +500,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 	var slot_yaw_degrees: float = final_marker.global_rotation_degrees.y if final_marker != null else 0.0
 	hud.show_message("Veiculo a caminho dos passageiros...")
 	AudioManager.play_sfx("car_driving")
-	if is_polish_test:
+	if is_polished:
 		await vehicle_node.drive_route_polished(route, slot_yaw_degrees)
 	else:
 		await vehicle_node.drive_route(route)
@@ -499,7 +514,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 		# residual que ainda escreva rotation_degrees, zera roll/pitch, e
 		# faz o assert de divergencia (push_error se diff > 1 grau) -- so na
 		# PolishTest.
-		if is_polish_test:
+		if is_polished:
 			vehicle_node.snap_polish_parked_orientation(slot_yaw_degrees)
 		# Numero regressivo aparece no instante em que o carro encosta na vaga
 		# (ainda ninguem embarcou -- os PassengerBoarded desta leva so tocam
@@ -508,7 +523,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 		var parked_vehicle: VehicleState = state.vehicles.get(vehicle_id) as VehicleState
 		if parked_vehicle != null:
 			var initial_count_text: String = str(maxi(parked_vehicle.capacity - parked_vehicle.occupied_seats, 0))
-			if is_polish_test:
+			if is_polished:
 				boarding_area.set_slot_label_text_pop(final_marker, initial_count_text)
 				# ETAPA 3B: na fase 950 a escala "estacionada" (e a transicao ate
 				# ela) ja foi aplicada dentro de drive_route_polished() (ver
@@ -545,11 +560,11 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 		# PolishTest, e SOMENTE no instante em que o motor decide GameOver.
 		# Remover depois que a investigacao/QA desta etapa terminar -- nunca deve
 		# poluir fases normais nem ficar permanente.
-		if is_polish_test:
+		if is_polished:
 			_debug_dump_deadlock_state()
 
 	_refresh_selectable_highlights()
-	hud.update_state(state, _message_from_events(events), _level_position_text(), last_stars_earned)
+	hud.update_state(state, _message_from_events(events), _level_position_text(), last_stars_earned, is_polished)
 	_end_tap_animation()
 
 # ETAPA 4B ("LOG TEMPORARIO"): dump de diagnostico chamado SOMENTE quando a
@@ -680,7 +695,8 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 	# vaga; o trecho final ate o centro (ApproachPoint->SlotCenter, ver
 	# VehicleController.drive_route_polished/_drive_final_approach_polished)
 	# cobre a profundidade real da vaga de forma reta e explicita.
-	if state.level_id == POLISH_TEST_LEVEL_ID:
+	# ETAPA 8: agora vale pra qualquer fase POLISHED (nao mais so a 950).
+	if is_polished:
 		lane_z = -boarding_area.get_slot_gap_to_board()
 	var stage: Vector3 = vehicle_node.position
 
@@ -696,6 +712,22 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 			stage.x = -margin
 		ExitDirection.Value.RIGHT:
 			stage.x = cols_width + margin
+	# ETAPA 8 (secao 9 -- bug da curva exagerada ao SAIR da vaga rumo a area
+	# de passageiros): so a direcao UP tem seu ponto de saida derivado de
+	# lane_z, que em fases POLISHED fica bem perto do tabuleiro (-0.15,
+	# contra o -0.78 generico). Isso criava um primeiro segmento de saida
+	# MUITO curto, concentrando uma curva grande numa fatia minuscula do
+	# comprimento/tempo total da animacao (ver _build_route_curve/
+	# drive_route_polished em VehicleController) -- lido visualmente como um
+	# giro brusco/diagonal logo que o veiculo deixa o tabuleiro. Fix: garante
+	# uma folga MINIMA de saida (o mesmo "margin" ja usado pelas outras 3
+	# direcoes) antes da curva -- e so a geometria do waypoint visual, nao
+	# toca em GameEngine/pathfinding. Nao muda nada fora do caso
+	# POLISHED+UP+lane_z comprimido: em fases CLASSIC lane_z ja e -0.78 (mais
+	# negativo que -margin=-0.72), entao minf() nunca altera esse resultado.
+	if vehicle_node.exit_direction == ExitDirection.Value.UP:
+		stage.z = minf(stage.z, vehicle_node.position.z - margin)
+		lane_z = stage.z
 	route.append(stage)
 
 	# IMPORTANTE: slot_position ja esta convertido para o espaco local de
@@ -733,7 +765,7 @@ func _play_boarding_events(events: Array, reserved_dolls: Array[PassengerControl
 	# loop sequencial abaixo (um boneco so comeca depois do anterior
 	# terminar). Toda fase normal continua exatamente no loop original,
 	# inalterado.
-	if state.level_id == POLISH_TEST_LEVEL_ID:
+	if is_polished:
 		await _play_boarding_events_polished(events, reserved_dolls)
 		return
 	var doll_cursor := 0
@@ -847,12 +879,14 @@ func _play_boarding_events_polished(events: Array, reserved_dolls: Array[Passeng
 				AudioManager.play_sfx("vehicle_complete")
 				AudioManager.vibrate(30)
 				_polish_effects.vehicle_complete_burst(completed_node.global_position, completed_node.color_id)
-				# ETAPA 5, itens 8-9: recompensa visual "+10" por veiculo
-				# completado, EXCLUSIVA da PolishTest -- saldo local, nunca
-				# Wallet/save real (ver _polish_local_coin_balance).
-				_polish_local_coin_balance += 10
-				_polish_effects.coin_popup(completed_node.global_position)
-				hud.show_polish_test_coin_counter(_polish_local_coin_balance)
+				# ETAPA 5/8: recompensa visual "+10" e o contador DEV continuam
+				# EXCLUSIVOS da PolishTest (fase 950 literal) -- nunca aparecem em
+				# fases reais (1-3), mesmo com presentation_profile POLISHED. Nunca
+				# passa por Wallet/save real (ver _polish_local_coin_balance).
+				if state.level_id == POLISH_TEST_LEVEL_ID:
+					_polish_local_coin_balance += 10
+					_polish_effects.coin_popup(completed_node.global_position)
+					hud.show_polish_test_coin_counter(_polish_local_coin_balance)
 				# ETAPA 4B (SINCRONIZACAO DO VEICULO, pedido explicito): pequena
 				# pausa (~0.10s) + micro reacao de "lotado" ANTES de sair, pra
 				# separar visualmente "terminou embarque" de "carro foi embora".
@@ -937,7 +971,7 @@ func _reserve_boarding_dolls(events: Array) -> Array[PassengerController]:
 	# de alguem sair". O pop/reserva em si (PassengerCrowdController.pop_front_doll acima)
 	# continua exatamente aqui, sincrono -- e o que garante a identidade certa
 	# com toques concorrentes, isso nunca muda.
-	if popped_any and state.level_id != POLISH_TEST_LEVEL_ID:
+	if popped_any and not is_polished:
 		_passenger_crowd.advance_dolls()
 	return reserved
 
@@ -965,13 +999,12 @@ func _has_event(events: Array, event_type: String) -> bool:
 func _setup_camera() -> void:
 	var center: Vector3 = board.get_board_center()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	# So a fase 950 (PolishTest) usa pitch/altura diferentes -- toda fase
-	# normal cai no "else" com os mesmos CAMERA_PITCH_DEGREES/CAMERA_HEIGHT de
-	# sempre, entao o resultado numerico pras fases normais e IDENTICO ao de
-	# antes desta etapa (ver POLISH_TEST_LEVEL_ID acima).
-	var is_polish_test: bool = state.level_id == POLISH_TEST_LEVEL_ID
-	var pitch_degrees: float = POLISH_CAMERA_PITCH_DEGREES if is_polish_test else CAMERA_PITCH_DEGREES
-	var camera_height: float = POLISH_CAMERA_HEIGHT if is_polish_test else CAMERA_HEIGHT
+	# ETAPA 8: qualquer fase POLISHED (950, 1, 2 ou 3) usa pitch/altura
+	# diferentes -- toda fase CLASSIC cai no "else" com os mesmos
+	# CAMERA_PITCH_DEGREES/CAMERA_HEIGHT de sempre, entao o resultado
+	# numerico pras fases CLASSIC e IDENTICO ao de antes desta etapa.
+	var pitch_degrees: float = POLISH_CAMERA_PITCH_DEGREES if is_polished else CAMERA_PITCH_DEGREES
+	var camera_height: float = POLISH_CAMERA_HEIGHT if is_polished else CAMERA_HEIGHT
 	camera.rotation_degrees = Vector3(pitch_degrees, 0.0, 0.0)
 
 	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
@@ -999,7 +1032,7 @@ func _setup_camera() -> void:
 	# compartilhada, que continua exatamente igual e intocada para toda fase
 	# normal. Isso e o que garante que a ultima fileira de passageiros (ate 40,
 	# pior caso de um onibus) nunca mais caia atras do HUD superior.
-	var boarding_area_depth: float = POLISH_BOARDING_AREA_DEPTH if is_polish_test else BOARDING_AREA_DEPTH
+	var boarding_area_depth: float = POLISH_BOARDING_AREA_DEPTH if is_polished else BOARDING_AREA_DEPTH
 	var top_z: float = -boarding_area_depth
 	var bottom_z: float = float(state.board_rows) * CELL_SIZE + BOARD_EDGE_MARGIN
 
@@ -1011,12 +1044,12 @@ func _setup_camera() -> void:
 	# toda fase normal), encolhe a faixa-alvo para POLISH_BOARD_FILL_FRACTION
 	# dela, centralizada -- e o "respiro"/composicao de diorama pedido, sem
 	# mudar em nada o calculo usado pelas fases normais (content_top_fraction
-	# == top_fraction e width_margin_scale == 1.0 quando is_polish_test e
+	# == top_fraction e width_margin_scale == 1.0 quando is_polished e
 	# false, entao a formula abaixo fica byte-a-byte igual a de antes).
 	var content_top_fraction: float = top_fraction
 	var content_bottom_fraction: float = bottom_fraction
 	var width_margin_scale: float = 1.0
-	if is_polish_test:
+	if is_polished:
 		var usable_band: float = bottom_fraction - top_fraction
 		var content_band: float = usable_band * POLISH_BOARD_FILL_FRACTION
 		var band_margin: float = (usable_band - content_band) * 0.5

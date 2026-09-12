@@ -65,8 +65,13 @@ func _ready() -> void:
 	_build_coin_badge()
 	Wallet.coins_changed.connect(_on_coins_changed)
 
-func update_state(state: GameState, text: String = "", progress_text: String = "", stars: int = -1) -> void:
-	if state.level_id == POLISH_TEST_LEVEL_ID and not _polish_hud_applied:
+# ETAPA 8: `polished` vem de GameController.is_polished (presentation_profile),
+# nao mais de uma comparacao local com state.level_id -- assim o estilo de HUD
+# "polido" tambem liga nas fases 1-3, nao so na 950. POLISH_TEST_LEVEL_ID
+# continua existindo (const abaixo) so para o que e EXCLUSIVO da PolishTest:
+# a badge DEV (show_polish_test_coin_counter/_build_polish_coin_badge).
+func update_state(state: GameState, text: String = "", progress_text: String = "", stars: int = -1, polished: bool = false) -> void:
+	if polished and not _polish_hud_applied:
 		_apply_polish_hud_style()
 		_polish_hud_applied = true
 	_title.text = "Fase %s" % state.level_id
@@ -410,10 +415,11 @@ func _bump_coin_badge() -> void:
 	bump.tween_property(_coin_badge, "scale", Vector2.ONE, 0.14)
 
 # --- Moedas de teste da PolishTest (ETAPA 5, itens 8-9) ---
-# Badge visual separado, exclusivo da fase 950: mostra "+10 por veiculo"
-# recompensa local sem tocar no saldo real (Wallet) nem no badge real
-# (_coin_badge/_coin_label). Chamado pelo GameController so quando
-# is_polish_test e verdadeiro.
+# Badge visual separado, exclusivo da fase 950 (ETAPA 8: continua gated por
+# state.level_id == POLISH_TEST_LEVEL_ID literal no GameController, NUNCA por
+# presentation_profile/is_polished -- fases 1-3 nunca chamam isto): mostra
+# "+10 por veiculo" recompensa local sem tocar no saldo real (Wallet) nem no
+# badge real (_coin_badge/_coin_label).
 func show_polish_test_coin_counter(amount: int) -> void:
 	if _polish_coin_badge == null:
 		_build_polish_coin_badge()
