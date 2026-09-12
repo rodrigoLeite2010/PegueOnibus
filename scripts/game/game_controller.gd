@@ -49,6 +49,24 @@ const CAMERA_FRAME_SAFETY_FRACTION := 0.02
 # proprio level_XXX.json/LevelGenerator de cada fase, sem nenhuma alteracao
 # aqui.
 enum PresentationProfile { CLASSIC, POLISHED }
+# ETAPA 10A (prova de conceito): representacao grafica do CORPO de cada
+# passageiro individual -- independente de PresentationProfile (que decide
+# camera/docks/fila/efeitos, nao o boneco em si). PROCEDURAL e o boneco de
+# primitivas de sempre (torso/cabeca/pernas/bracos, ver PassengerController.
+# _build_procedural_visual); GLB_3D usa o novo modelo passenger_01.glb (ver
+# _build_glb_visual/scripts/game/passenger_3d.gd). Nunca decide cor/fila/
+# capacidade/regra -- so a malha 3D exibida.
+enum PassengerVisualMode { PROCEDURAL, GLB_3D }
+# ETAPA 10A (item 7 do pedido): auditoria (ver ENTREGA_ETAPA_10A.md) mediu
+# ~1.96 milhoes de triangulos por instancia do GLB, sem Skeleton3D/
+# AnimationPlayer -- 100-1000x um orcamento tipico de personagem de fundo
+# para mobile. Testes de bancada com renderizacao real (10/30/60 instancias)
+# mostraram degradacao clara de FPS conforme o numero cresce, mesmo rodando
+# em hardware de desktop. Por isso GLB_3D fica DESLIGADO por padrao mesmo na
+# fase 950 (que chega a MAX_VISIBLE_QUEUE_DOLLS=40 bonecos simultaneos) --
+# true aqui e so para o usuario comparar manualmente em hardware real antes
+# de decidir se/quando ligar por padrao. NUNCA ligar para outras fases nesta
+# etapa (ver Passo 3 do pedido: so PolishTest/950).
 # Fase de QA/stress-test (ver scripts/game/polish_test_launcher.gd) -- usada
 # hoje so pelo gate literal do "+10"/contador DEV (ver _play_boarding_events
 # mais abaixo) e por HUDController.show_polish_test_coin_counter, NUNCA para
@@ -59,6 +77,7 @@ const POLISH_TEST_LEVEL_ID := 950
 # (comportamento pre-Etapa-8), util para comparar visualmente durante o
 # desenvolvimento sem precisar reverter codigo.
 const FORCE_CLASSIC_DEBUG := false
+const FORCE_GLB_PASSENGER_VISUAL_DEBUG := false
 
 # --- ETAPA 8B: densidade de conteudo (ContentDensity) ---
 # Complementa PresentationProfile: POLISHED decide COMO uma fase e
@@ -171,6 +190,9 @@ var _polish_effects: PolishEffectsController
 # em nenhum outro lugar do arquivo.
 var presentation_profile: PresentationProfile = PresentationProfile.CLASSIC
 var is_polished: bool = false
+# ETAPA 10A: recalculado a cada _load_level_number(), junto com
+# presentation_profile/is_polished acima.
+var passenger_visual_mode: PassengerVisualMode = PassengerVisualMode.PROCEDURAL
 # ETAPA 8B: resolvidos uma vez por fase em _load_level_number(), junto com
 # presentation_profile/is_polished acima. _content_bounds fica Rect2()
 # (vazio) para toda fase CLASSIC -- nunca lido fora do ramo is_polished.
@@ -252,6 +274,15 @@ func _resolve_presentation_profile(_level_id: int) -> PresentationProfile:
 	if FORCE_CLASSIC_DEBUG:
 		return PresentationProfile.CLASSIC
 	return PresentationProfile.POLISHED
+
+# ETAPA 10A: so retorna GLB_3D quando FORCE_GLB_PASSENGER_VISUAL_DEBUG
+# estiver ligado (comparacao manual A/B, ver comentario da const acima).
+# Fora disso toda fase -- incluindo a 950 -- continua no boneco procedural
+# de sempre.
+func _resolve_passenger_visual_mode(_level_id: int) -> PassengerVisualMode:
+	if FORCE_GLB_PASSENGER_VISUAL_DEBUG:
+		return PassengerVisualMode.GLB_3D
+	return PassengerVisualMode.PROCEDURAL
 
 # ETAPA 8B (ticket secao 2): classificacao de densidade visual, baseada no
 # numero de veiculos da fase -- nao altera dificuldade/conteudo, so decide
@@ -412,6 +443,7 @@ func _load_level_number(level_number: int) -> void:
 	presentation_profile = _resolve_presentation_profile(state.level_id)
 	is_polished = presentation_profile == PresentationProfile.POLISHED
 	content_density = _resolve_content_density(state.vehicles.size())
+	passenger_visual_mode = _resolve_passenger_visual_mode(state.level_id)
 	_content_bounds = _compute_content_bounds() if is_polished else Rect2()
 	# ETAPA 8C (ticket secao 4): compressao visual do board SO para SMALL
 	# (nunca MEDIUM/LARGE) -- ver comentario do var use_compact_board acima.
@@ -429,7 +461,7 @@ func _load_level_number(level_number: int) -> void:
 	var dock_width_scale: float = _dock_width_scale_for_density(content_density) if is_polished else DOCK_WIDTH_SCALE_LARGE
 	var dock_depth_scale: float = _dock_depth_scale_for_density(content_density) if is_polished else DOCK_DEPTH_SCALE_LARGE
 	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished, dock_width_scale, dock_depth_scale)
-	_passenger_crowd.setup(passengers_root, boarding_area, is_polished, state.board_cols, CELL_SIZE)
+	_passenger_crowd.setup(passengers_root, boarding_area, is_polished, state.board_cols, CELL_SIZE, passenger_visual_mode == PassengerVisualMode.GLB_3D)
 	_passenger_crowd.rebuild_dolls(state.passenger_queue)
 	_spawn_vehicles()
 	_refresh_selectable_highlights()

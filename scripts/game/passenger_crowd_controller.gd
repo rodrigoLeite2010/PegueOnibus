@@ -26,6 +26,14 @@ var _boarding_area: Node3D
 var _polish_mode: bool = false
 var _board_cols: int = 0
 var _cell_size: float = 1.0
+# ETAPA 10A (prova de conceito): quando true, cada boneco spawnado usa o novo
+# modelo 3D (passenger_01.glb via Passenger3D) em vez dos primitivos
+# proceduais -- ver GameController.passenger_visual_mode/
+# PassengerController.use_glb_visual. So chega true quando
+# GameController.FORCE_GLB_PASSENGER_VISUAL_DEBUG estiver ligado (ver
+# ENTREGA_ETAPA_10A.md); nunca influencia a ordem/logica da fila, so a
+# representacao grafica de cada boneco.
+var _use_glb_visual: bool = false
 
 var _queue_dolls: Array[PassengerController] = []
 var _queue_reveal_count: int = 0
@@ -59,12 +67,13 @@ const POLISH_CROWD_ROW_STAGGER := 0.29
 const POLISH_QUEUE_ADVANCE_STAGGER := 0.02
 
 
-func setup(passengers_root: Node3D, boarding_area: Node3D, polish_mode: bool, board_cols: int, cell_size: float) -> void:
+func setup(passengers_root: Node3D, boarding_area: Node3D, polish_mode: bool, board_cols: int, cell_size: float, use_glb_visual: bool = false) -> void:
 	_passengers_root = passengers_root
 	_boarding_area = boarding_area
 	_polish_mode = polish_mode
 	_board_cols = board_cols
 	_cell_size = cell_size
+	_use_glb_visual = use_glb_visual
 
 
 # --- Passageiros 3D esperando perto das vagas ---
@@ -116,7 +125,7 @@ func rebuild_dolls(passenger_queue: Array) -> void:
 func _spawn_doll(spawn_index: int, color_id: String) -> PassengerController:
 	var doll := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
 	_passengers_root.add_child(doll)
-	doll.setup(color_id, _polish_mode)
+	doll.setup(color_id, _polish_mode, _use_glb_visual)
 	doll.position = queue_slot_position(_queue_dolls.size())
 	return doll
 
@@ -129,7 +138,7 @@ func _spawn_doll(spawn_index: int, color_id: String) -> PassengerController:
 func _spawn_doll_walking_in(slot_index: int, color_id: String) -> PassengerController:
 	var doll := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
 	_passengers_root.add_child(doll)
-	doll.setup(color_id, _polish_mode)
+	doll.setup(color_id, _polish_mode, _use_glb_visual)
 	var target: Vector3 = queue_slot_position(slot_index)
 	doll.position = target + Vector3(CROWD_ENTRY_OFFSET_X, 0.0, 0.0)
 	doll.step_to(target)
@@ -141,7 +150,7 @@ func pop_front_doll(color_id: String) -> PassengerController:
 		return _queue_dolls.pop_front()
 	var fallback := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
 	_passengers_root.add_child(fallback)
-	fallback.setup(color_id, _polish_mode)
+	fallback.setup(color_id, _polish_mode, _use_glb_visual)
 	fallback.position = queue_slot_position(0)
 	return fallback
 

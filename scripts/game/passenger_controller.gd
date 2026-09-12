@@ -20,6 +20,17 @@ const COLOR_MAP := {
 # exatamente no bounce padrao de sempre.
 var is_polish: bool = false
 
+# ETAPA 10A (prova de conceito): quando true, _build() usa o novo modelo 3D
+# (passenger_01.glb, via o wrapper Passenger3D) em vez dos primitivos
+# proceduais abaixo -- ver _build_glb_visual()/_build_procedural_visual().
+# So fica true quando GameController.FORCE_GLB_PASSENGER_VISUAL_DEBUG estiver
+# ligado (ver ENTREGA_ETAPA_10A.md, secao de performance -- o GLB tem ~1.96M
+# triangulos por instancia e fica desligado por padrao mesmo na fase 950).
+# Nunca influencia color_id/logica -- so a representacao grafica do corpo.
+var use_glb_visual: bool = false
+
+const PASSENGER_3D_SCENE := preload("res://scenes/passengers/Passenger3D.tscn")
+
 # ETAPA 6 (item 8): fator de escala exclusivo da PolishTest -- ver uso em
 # _build() e pop_in().
 const POLISH_SCALE := 1.12
@@ -44,9 +55,10 @@ var _move_tween: Tween
 func _ready() -> void:
 	_build()
 
-func setup(p_color_id: String, p_is_polish: bool = false) -> void:
+func setup(p_color_id: String, p_is_polish: bool = false, p_use_glb_visual: bool = false) -> void:
 	color_id = p_color_id
 	is_polish = p_is_polish
+	use_glb_visual = p_use_glb_visual
 	_build()
 
 # Velocidade dobrada em relacao ao original (0.57s -> 0.285s do total ate
@@ -293,6 +305,44 @@ func _build() -> void:
 		scale = Vector3.ONE * POLISH_SCALE
 		_add_polish_shadow()
 
+	_leg_pivots.clear()
+	_arm_pivots.clear()
+	if use_glb_visual:
+		_build_glb_visual()
+	else:
+		_build_procedural_visual()
+
+	# Leve bounce idle para nao parecer uma peca totalmente estatica. Na fase
+	# 950 (item 2 da Etapa 4) isto vira o idle "polido" abaixo -- amplitude
+	# maior e fase inicial variada por boneco; toda fase normal continua com
+	# este bounce padrao, inalterado.
+	if is_polish:
+		start_polish_idle()
+	else:
+		var idle := create_tween()
+		_idle_tween = idle
+		idle.set_loops()
+		idle.set_trans(Tween.TRANS_SINE)
+		idle.set_ease(Tween.EASE_IN_OUT)
+		idle.tween_property(_body_root, "position:y", 0.018, 0.34)
+		idle.tween_property(_body_root, "position:y", 0.0, 0.34)
+
+# ETAPA 10A (prova de conceito): substitui os primitivos proceduais pelo
+# novo modelo 3D (passenger_01.glb), sempre atraves do wrapper Passenger3D
+# (nunca o GLB diretamente -- ver scripts/game/passenger_3d.gd). _leg_pivots/
+# _arm_pivots ficam vazios de proposito: a auditoria da Etapa 10A confirmou
+# que o GLB nao tem Skeleton3D/AnimationPlayer, entao _start_walk_cycle() so
+# encontra menos de 2 pivots e nao faz nada (guard clause ja existente, sem
+# mudanca necessaria ali) -- o Node3D inteiro (este PassengerController)
+# continua sendo movimentado por step_to()/walk_to_and_board*() exatamente
+# como antes. Cor NAO e reaplicada ainda (Etapa 10B fara isso); todos ficam
+# com o material original do GLB por enquanto (Passo 6 do pedido da Etapa
+# 10A: prova visual/estrutural, nao recolorir ainda).
+func _build_glb_visual() -> void:
+	var visual: Node3D = PASSENGER_3D_SCENE.instantiate() as Node3D
+	_body_root.add_child(visual)
+
+func _build_procedural_visual() -> void:
 	var shirt_color: Color = COLOR_MAP.get(color_id, Color.WHITE)
 	var skin := Color("#f2b58a")
 	var dark := shirt_color.darkened(0.14)
@@ -386,21 +436,6 @@ func _build() -> void:
 		hand.position = Vector3(0.0, -0.17, 0.0)
 		hand.material_override = _material(skin, 0.6)
 		shoulder.add_child(hand)
-
-	# Leve bounce idle para nao parecer uma peca totalmente estatica. Na fase
-	# 950 (item 2 da Etapa 4) isto vira o idle "polido" abaixo -- amplitude
-	# maior e fase inicial variada por boneco; toda fase normal continua com
-	# este bounce padrao, inalterado.
-	if is_polish:
-		start_polish_idle()
-	else:
-		var idle := create_tween()
-		_idle_tween = idle
-		idle.set_loops()
-		idle.set_trans(Tween.TRANS_SINE)
-		idle.set_ease(Tween.EASE_IN_OUT)
-		idle.tween_property(_body_root, "position:y", 0.018, 0.34)
-		idle.tween_property(_body_root, "position:y", 0.0, 0.34)
 
 # step_duration e o tempo de CADA quarto de passada. walk_to_and_board() usa
 # um valor menor (passada mais rapida, ver acima); step_to() (fila 3D
