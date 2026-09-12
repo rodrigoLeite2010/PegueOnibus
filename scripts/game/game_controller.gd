@@ -100,6 +100,30 @@ const DOCK_WIDTH_SCALE_SMALL := 0.55
 const DOCK_WIDTH_SCALE_MEDIUM := 0.80
 const DOCK_WIDTH_SCALE_LARGE := 1.0
 
+# ETAPA 8C (ticket secao 11/12): profundidade visual das vagas
+# (BoardingAreaController.dock_depth_scale) -- diferente do
+# DOCK_WIDTH_SCALE_* acima (que comprime GAP/vaga bloqueada), este
+# comprime a PROFUNDIDADE (POLISH_SLOT_DEPTH tem muita folga sobre o
+# footprint real do small_car -- ver ENTREGA_ETAPA_8C.md). LARGE=1.0
+# reproduz exatamente o layout de sempre (regressao zero pra 950).
+const DOCK_DEPTH_SCALE_SMALL := 0.80
+const DOCK_DEPTH_SCALE_MEDIUM := 0.95
+const DOCK_DEPTH_SCALE_LARGE := 1.0
+
+# ETAPA 8C (ticket secao 21): faixa de compressao do BOARD VISUAL (piso/
+# veiculos/rotas/ambiente) pra ContentDensity.SMALL, derivada da
+# ocupacao real do conteudo (_resolve_visual_compact_scale) em vez de um
+# unico numero fixo -- fases mais vazias (1/2) comprimem mais que fases
+# com mais conteudo (3), sem precisar de uma terceira categoria de
+# densidade (o pedido explicitamente NAO quis um "SMALL_TINY"). Faixa
+# deliberadamente mais conservadora que o 0.82-1.0 sugerido no ticket,
+# porque este ambiente nao consegue renderizar/testar visualmente no
+# Godot -- ver ENTREGA_ETAPA_8C.md.
+const COMPACT_OCCUPANCY_LOW := 0.15
+const COMPACT_OCCUPANCY_HIGH := 0.40
+const COMPACT_SCALE_MIN := 0.86
+const COMPACT_SCALE_MAX := 0.96
+
 # ETAPA 8B: margem em torno do CONTEUDO real (veiculos ON_BOARD), usada
 # pelo corte de camera (_setup_camera) -- mesmo papel/ordem de grandeza
 # de BOARD_EDGE_MARGIN acima, so que medida a partir do conteudo em vez
@@ -141,6 +165,13 @@ var is_polished: bool = false
 # (vazio) para toda fase CLASSIC -- nunca lido fora do ramo is_polished.
 var content_density: ContentDensity = ContentDensity.LARGE
 var _content_bounds: Rect2 = Rect2()
+# ETAPA 8C: so true quando is_polished && content_density == SMALL (ticket
+# secao 4: compressao de board "SOMENTE para fases SMALL"). Board/
+# environment/veiculos/rotas so entram no caminho de compactacao visual
+# quando isto e true; MEDIUM/LARGE/CLASSIC ficam byte-a-byte identicos a
+# antes da Etapa 8C.
+var use_compact_board: bool = false
+var visual_compact_scale: float = 1.0
 
 # ETAPA 7 (refatoracao segura): instanciado em _ready(), nunca editado na
 # cena .tscn -- ver PassengerCrowdController. setup() e chamado de novo a
@@ -222,6 +253,27 @@ func _dock_width_scale_for_density(density: ContentDensity) -> float:
 			return DOCK_WIDTH_SCALE_MEDIUM
 		_:
 			return DOCK_WIDTH_SCALE_LARGE
+
+func _dock_depth_scale_for_density(density: ContentDensity) -> float:
+	match density:
+		ContentDensity.SMALL:
+			return DOCK_DEPTH_SCALE_SMALL
+		ContentDensity.MEDIUM:
+			return DOCK_DEPTH_SCALE_MEDIUM
+		_:
+			return DOCK_DEPTH_SCALE_LARGE
+
+# ETAPA 8C (ticket secao 21): fator de compressao do board visual,
+# derivado da ocupacao real do conteudo (area do retangulo de conteudo /
+# area total do tabuleiro logico) -- fase mais vazia comprime mais
+# (perto de COMPACT_SCALE_MIN), fase com mais conteudo comprime menos
+# (perto de COMPACT_SCALE_MAX), sem precisar de uma nova categoria de
+# densidade. So chamado quando use_compact_board (ver _load_level_number).
+func _resolve_visual_compact_scale(content_bounds: Rect2, total_rows: int, total_cols: int) -> float:
+	var board_cells: float = maxf(float(total_rows * total_cols), 1.0)
+	var occupancy: float = (content_bounds.size.x * content_bounds.size.y) / board_cells
+	var t: float = clampf((occupancy - COMPACT_OCCUPANCY_LOW) / (COMPACT_OCCUPANCY_HIGH - COMPACT_OCCUPANCY_LOW), 0.0, 1.0)
+	return lerpf(COMPACT_SCALE_MIN, COMPACT_SCALE_MAX, t)
 
 # Bounds (em unidades de GRADE -- linhas/colunas, nao mundo) do retangulo
 # que envolve todos os veiculos ON_BOARD, usando o footprint INTEIRO de
@@ -342,14 +394,22 @@ func _load_level_number(level_number: int) -> void:
 	is_polished = presentation_profile == PresentationProfile.POLISHED
 	content_density = _resolve_content_density(state.vehicles.size())
 	_content_bounds = _compute_content_bounds() if is_polished else Rect2()
+	# ETAPA 8C (ticket secao 4): compressao visual do board SO para SMALL
+	# (nunca MEDIUM/LARGE) -- ver comentario do var use_compact_board acima.
+	use_compact_board = is_polished and content_density == ContentDensity.SMALL
+	visual_compact_scale = _resolve_visual_compact_scale(_content_bounds, state.board_rows, state.board_cols) if use_compact_board else 1.0
 	if is_polished:
 		_apply_polish_environment()
 	else:
 		_restore_default_environment()
-	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
-	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
+	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished, use_compact_board, _content_bounds, visual_compact_scale)
+	# ETAPA 8C (ticket secao 15): cenario segue o MESMO board visual
+	# compacto (chamado depois de board.setup() de proposito, pra ler
+	# get_board_center()/get_visual_size() ja recalculados).
+	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished, use_compact_board, board.get_board_center(), board.get_visual_size())
 	var dock_width_scale: float = _dock_width_scale_for_density(content_density) if is_polished else DOCK_WIDTH_SCALE_LARGE
-	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished, dock_width_scale)
+	var dock_depth_scale: float = _dock_depth_scale_for_density(content_density) if is_polished else DOCK_DEPTH_SCALE_LARGE
+	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished, dock_width_scale, dock_depth_scale)
 	_passenger_crowd.setup(passengers_root, boarding_area, is_polished, state.board_cols, CELL_SIZE)
 	_passenger_crowd.rebuild_dolls(state.passenger_queue)
 	_spawn_vehicles()
@@ -450,6 +510,14 @@ func _spawn_vehicles() -> void:
 		var vehicle_node := preload("res://scenes/game/Vehicle.tscn").instantiate() as VehicleController
 		vehicles_root.add_child(vehicle_node)
 		vehicle_node.setup_from_state(vehicle, CELL_SIZE, is_polished)
+		# ETAPA 8C (ticket secao 7): mesma transformacao visual usada pelo
+		# BoardController pra desenhar o piso -- a posicao LOGICA (row/col)
+		# em state/VehicleState nunca muda, so a posicao 3D deste no e
+		# reposicionada. Sombra/highlight/collider (filhos deste no) seguem
+		# automaticamente, sem nenhuma mudanca em VehicleController.gd.
+		if use_compact_board:
+			vehicle_node.position.x = board.visual_x(vehicle_node.position.x)
+			vehicle_node.position.z = board.visual_z(vehicle_node.position.z)
 		if is_polished:
 			# ETAPA 2B: aumento bem maior que a Etapa 2 (que so dava +10% ao
 			# medium_car). Valores escolhidos na ponta CONSERVADORA de cada
@@ -805,6 +873,10 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 	var right_x: float = cols_width + margin
 	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
 		framed_rows_depth = minf(rows_depth, (_content_bounds.position.y + _content_bounds.size.y) * CELL_SIZE)
+		# ETAPA 8C (ticket secao 8): mesma transformacao visual do board --
+		# identidade fora de SMALL, entao MEDIUM/LARGE ficam com o mesmo
+		# framed_rows_depth de sempre (Etapa 8B).
+		framed_rows_depth = board.visual_z(framed_rows_depth)
 		var lane_half_width: float = boarding_area.get_polish_lane_half_width()
 		var board_center_x: float = cols_width * 0.5
 		left_x = maxf(left_x, board_center_x - lane_half_width + POLISH_EXIT_INNER_MARGIN)
@@ -1158,6 +1230,11 @@ func _setup_camera() -> void:
 	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
 		var content_bottom_row: float = _content_bounds.position.y + _content_bounds.size.y
 		bottom_z = minf(bottom_z, content_bottom_row * CELL_SIZE + POLISH_CONTENT_DEPTH_MARGIN)
+	# ETAPA 8C (ticket secao 10): quando o board visual esta compactado
+	# (SMALL), a camera precisa enquadrar o board JA compactado, nao mais
+	# o cortado-mas-nao-comprimido da Etapa 8B -- board.visual_z() e
+	# identidade (retorna bottom_z sem mudanca) em MEDIUM/LARGE/CLASSIC.
+	bottom_z = board.visual_z(bottom_z)
 
 	var top_fraction: float = HUD_TOP_UNSAFE_FRACTION + CAMERA_FRAME_SAFETY_FRACTION
 	var bottom_fraction: float = 1.0 - HUD_BOTTOM_UNSAFE_FRACTION - CAMERA_FRAME_SAFETY_FRACTION
@@ -1189,7 +1266,12 @@ func _setup_camera() -> void:
 	# LARGE (950) tem tabuleiro mais largo que o bloco de vagas, entao
 	# esse ramo nunca muda o valor de 950.
 	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
-		var content_width: float = _content_bounds.size.x * CELL_SIZE
+		# ETAPA 8C: content_width e uma EXTENSAO (delta), nao uma coordenada
+		# absoluta -- por isso escala por board.get_visual_scale() em vez de
+		# passar por board.visual_x() (que e afim em torno do centro, so
+		# correto para pontos, nao para distancias). Identidade (*1.0) fora
+		# de SMALL.
+		var content_width: float = _content_bounds.size.x * CELL_SIZE * board.get_visual_scale()
 		var lane_width: float = boarding_area.get_polish_lane_half_width() * 2.0
 		var required_by_width_content: float = maxf(content_width, lane_width) / maxf(aspect, 0.35) * width_margin_scale
 		required_by_width = minf(required_by_width, required_by_width_content)
