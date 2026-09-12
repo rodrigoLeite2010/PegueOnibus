@@ -21,7 +21,8 @@ extends Node3D
 ## fase porque depende de state.waiting_slots (dado de jogo, nao decoracao).
 ## Por isso NAO existe um grupo "BoardingArea" aqui dentro -- duplicaria
 ## aquele no funcional. O lado "up" (onde fica o embarque) ganha sua propria
-## pista dedicada em GameController._setup_boarding_area(); aqui so evitamos
+## pista dedicada em BoardingAreaController (chamada via GameController.
+## boarding_area.setup()); aqui so evitamos
 ## colocar decoracao nova em cima dele.
 
 @export var rows: int = 8
@@ -100,7 +101,8 @@ func rebuild() -> void:
 	_add_side_connector("left")
 	_add_side_connector("right")
 	# O lado "up" ja ganha uma rua/plataforma dedicada em
-	# GameController._setup_boarding_area(); nao duplicamos aqui.
+	# BoardingAreaController (chamada via GameController.boarding_area.setup());
+	# nao duplicamos aqui.
 	# ETAPA 6, item 6: as vagas extras pintadas no patio (fora do tabuleiro
 	# jogavel) somavam "espaco visual inutil" e liam como planilha -- a
 	# PolishTest fica so com grama/pista/poucos props, como pedido.

@@ -120,7 +120,7 @@ func walk_to_and_board_polished(target: Vector3) -> void:
 	# do grupo. Sem isto o boneco saia direto da posicao da fila reto rumo ao
 	# veiculo, o que -- somado a reorganizacao da fila -- dava a impressao de
 	# "teleportou e a fila inteira mudou". So DEPOIS deste passo o boneco conta
-	# como "claramente saindo" (ver GameController._advance_queue_dolls_polished,
+	# como "claramente saindo" (ver PassengerCrowdController.advance_dolls_polished,
 	# que so reorganiza a fila apos o primeiro _run_cascaded_boarding() desta
 	# leva passar por este ponto).
 	var pop_start: Vector3 = position
@@ -220,8 +220,8 @@ func _apply_bezier_run_progress(t: float, p0: Vector3, control: Vector3, p2: Vec
 # correr -- comunica "e a vez dessas pessoas". Anima so _body_root (nunca
 # `scale`/`position` do no raiz, que step_to()/walk_to_and_board_polished()
 # usam), entao nunca compete com o resto do movimento do boneco. Chamada
-# so pelos primeiros visiveis da cor (ver GameController.
-# _react_queue_dolls_for_color), nunca nos 40 de uma vez.
+# so pelos primeiros visiveis da cor (ver PassengerCrowdController.
+# react_for_color), nunca nos 40 de uma vez.
 func polish_color_react() -> void:
 	if _body_root == null:
 		return
