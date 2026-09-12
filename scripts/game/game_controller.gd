@@ -48,6 +48,21 @@ const CAMERA_FRAME_SAFETY_FRACTION := 0.02
 enum PresentationProfile { CLASSIC, POLISHED }
 const POLISH_TEST_LEVEL_ID := 950
 const POLISHED_LEVEL_IDS: Array[int] = [1, 2, 3, POLISH_TEST_LEVEL_ID]
+
+# --- ETAPA 8B: densidade de conteudo (ContentDensity) ---
+# Complementa PresentationProfile: POLISHED decide COMO uma fase e
+# apresentada (camera/docks/fila/efeitos); ContentDensity decide o QUANTO
+# essa apresentacao precisa se comprimir para o volume real de conteudo da
+# fase (numero de veiculos), resolvido uma vez por fase carregada (ver
+# _load_level_number -> _resolve_content_density()). So tem efeito quando
+# is_polished == true; toda fase CLASSIC ignora content_density por
+# completo, e LARGE reproduz exatamente o enquadramento/docks de sempre
+# (regressao zero pra 950). Os limiares abaixo sao os do proprio ticket
+# da Etapa 8B (secao 2) -- fases 1/2/3 (4-5 veiculos) caem em SMALL, a
+# PolishTest/950 (26 veiculos) cai em LARGE; ver ENTREGA_ETAPA_8B.md.
+enum ContentDensity { SMALL, MEDIUM, LARGE }
+const DENSITY_SMALL_MAX_VEHICLES := 6
+const DENSITY_MEDIUM_MAX_VEHICLES := 14
 # ETAPA 2B: pitch ainda mais raso (-50 -> -44, dentro da faixa -42..-46
 # pedida) para mostrar claramente a lateral dos veiculos, especialmente dos
 # onibus -- o feedback da Etapa 2 foi "ainda parece muito de cima".
@@ -76,6 +91,28 @@ const POLISH_WIDTH_FILL_FRACTION := 1.0
 # BOARDING_AREA_DEPTH continua exatamente igual para toda fase normal.
 const POLISH_BOARDING_AREA_DEPTH := 5.5
 
+# ETAPA 8B: quanto o bloco de vagas (BoardingAreaController.dock_width_scale)
+# se compacta por densidade -- LARGE=1.0 reproduz exatamente a largura de
+# sempre (regressao zero pra 950); SMALL/MEDIUM foram calculados e
+# validados em ENTREGA_ETAPA_8B.md pra abrir espaco de zoom sem deixar a
+# vaga bloqueada nem o gap ilegiveis.
+const DOCK_WIDTH_SCALE_SMALL := 0.55
+const DOCK_WIDTH_SCALE_MEDIUM := 0.80
+const DOCK_WIDTH_SCALE_LARGE := 1.0
+
+# ETAPA 8B: margem em torno do CONTEUDO real (veiculos ON_BOARD), usada
+# pelo corte de camera (_setup_camera) -- mesmo papel/ordem de grandeza
+# de BOARD_EDGE_MARGIN acima, so que medida a partir do conteudo em vez
+# da borda do tabuleiro inteiro.
+const POLISH_CONTENT_DEPTH_MARGIN := BOARD_EDGE_MARGIN
+# Folga minima entre o veiculo parado (rota de saida cortada, ver
+# _build_route_to_waiting_slot) e a borda VISIVEL do novo enquadramento --
+# metade do "margin" generico (0.72) ja usado pelas 4 direcoes de saida,
+# reproduzindo a mesma folga de ~0.13 que ja existe hoje entre esse
+# margin e o BOARD_EDGE_MARGIN da camera (0.72 vs 0.85) em toda fase
+# LARGE/CLASSIC.
+const POLISH_EXIT_INNER_MARGIN := 0.30
+
 @onready var board: BoardController = $Board
 @onready var environment: EnvironmentController = $GameEnvironment
 @onready var vehicles_root: Node3D = $Vehicles
@@ -99,6 +136,11 @@ var _polish_effects: PolishEffectsController
 # em nenhum outro lugar do arquivo.
 var presentation_profile: PresentationProfile = PresentationProfile.CLASSIC
 var is_polished: bool = false
+# ETAPA 8B: resolvidos uma vez por fase em _load_level_number(), junto com
+# presentation_profile/is_polished acima. _content_bounds fica Rect2()
+# (vazio) para toda fase CLASSIC -- nunca lido fora do ramo is_polished.
+var content_density: ContentDensity = ContentDensity.LARGE
+var _content_bounds: Rect2 = Rect2()
 
 # ETAPA 7 (refatoracao segura): instanciado em _ready(), nunca editado na
 # cena .tscn -- ver PassengerCrowdController. setup() e chamado de novo a
@@ -160,6 +202,54 @@ var _camera_shake_tween: Tween
 var _polish_local_coin_balance: int = 0
 func _resolve_presentation_profile(level_id: int) -> PresentationProfile:
 	return PresentationProfile.POLISHED if POLISHED_LEVEL_IDS.has(level_id) else PresentationProfile.CLASSIC
+
+# ETAPA 8B (ticket secao 2): classificacao de densidade visual, baseada no
+# numero de veiculos da fase -- nao altera dificuldade/conteudo, so decide
+# o quanto _setup_camera()/_build_route_to_waiting_slot()/BoardingArea
+# comprimem a composicao.
+func _resolve_content_density(vehicle_count: int) -> ContentDensity:
+	if vehicle_count <= DENSITY_SMALL_MAX_VEHICLES:
+		return ContentDensity.SMALL
+	elif vehicle_count <= DENSITY_MEDIUM_MAX_VEHICLES:
+		return ContentDensity.MEDIUM
+	return ContentDensity.LARGE
+
+func _dock_width_scale_for_density(density: ContentDensity) -> float:
+	match density:
+		ContentDensity.SMALL:
+			return DOCK_WIDTH_SCALE_SMALL
+		ContentDensity.MEDIUM:
+			return DOCK_WIDTH_SCALE_MEDIUM
+		_:
+			return DOCK_WIDTH_SCALE_LARGE
+
+# Bounds (em unidades de GRADE -- linhas/colunas, nao mundo) do retangulo
+# que envolve todos os veiculos ON_BOARD, usando o footprint INTEIRO de
+# cada um (nunca so a celula de origem). Calculado uma unica vez por fase
+# carregada (ver _load_level_number) e cacheado em _content_bounds --
+# veiculos nunca nascem/spawnam no meio de uma fase, entao o valor nao
+# muda enquanto ela estiver aberta. So leitura: nunca altera
+# GameEngine/state. Fallback (fase sem nenhum veiculo ON_BOARD,
+# teoricamente impossivel) devolve o tabuleiro inteiro, o que equivale a
+# nao cortar nada em _setup_camera()/_build_route_to_waiting_slot().
+func _compute_content_bounds() -> Rect2:
+	var min_row := 999999.0
+	var max_row := -999999.0
+	var min_col := 999999.0
+	var max_col := -999999.0
+	var found := false
+	for vehicle_id: String in state.vehicles.keys():
+		var vehicle: VehicleState = state.vehicles[vehicle_id]
+		if vehicle.status != VehicleState.ON_BOARD:
+			continue
+		found = true
+		min_row = minf(min_row, float(vehicle.row))
+		max_row = maxf(max_row, float(vehicle.row + vehicle.footprint_rows))
+		min_col = minf(min_col, float(vehicle.col))
+		max_col = maxf(max_col, float(vehicle.col + vehicle.footprint_cols))
+	if not found:
+		return Rect2(0.0, 0.0, float(state.board_cols), float(state.board_rows))
+	return Rect2(min_col, min_row, max_col - min_col, max_row - min_row)
 
 func _ready() -> void:
 	hud.restart_requested.connect(restart_level)
@@ -250,13 +340,16 @@ func _load_level_number(level_number: int) -> void:
 	state = GameEngine.create_state(level)
 	presentation_profile = _resolve_presentation_profile(state.level_id)
 	is_polished = presentation_profile == PresentationProfile.POLISHED
+	content_density = _resolve_content_density(state.vehicles.size())
+	_content_bounds = _compute_content_bounds() if is_polished else Rect2()
 	if is_polished:
 		_apply_polish_environment()
 	else:
 		_restore_default_environment()
 	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
 	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polished)
-	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished)
+	var dock_width_scale: float = _dock_width_scale_for_density(content_density) if is_polished else DOCK_WIDTH_SCALE_LARGE
+	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polished, dock_width_scale)
 	_passenger_crowd.setup(passengers_root, boarding_area, is_polished, state.board_cols, CELL_SIZE)
 	_passenger_crowd.rebuild_dolls(state.passenger_queue)
 	_spawn_vehicles()
@@ -698,6 +791,24 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 	# ETAPA 8: agora vale pra qualquer fase POLISHED (nao mais so a 950).
 	if is_polished:
 		lane_z = -boarding_area.get_slot_gap_to_board()
+
+	# ETAPA 8B (ticket secao 5): quando _setup_camera() corta o
+	# enquadramento para fases POLISHED de baixa content_density, a rota
+	# de saida NAO pode mais viajar ate a borda cheia do tabuleiro/margem
+	# generica de sempre -- o veiculo sairia visualmente da tela no meio
+	# da animacao. Usa a MESMA fonte de dados da camera
+	# (_content_bounds/get_polish_lane_half_width()) pra nunca divergir
+	# dela, e so ESTREITA os limites de saida (maxf/minf contra os
+	# valores de sempre) -- LARGE/CLASSIC ficam byte-a-byte identicos.
+	var framed_rows_depth: float = rows_depth
+	var left_x: float = -margin
+	var right_x: float = cols_width + margin
+	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
+		framed_rows_depth = minf(rows_depth, (_content_bounds.position.y + _content_bounds.size.y) * CELL_SIZE)
+		var lane_half_width: float = boarding_area.get_polish_lane_half_width()
+		var board_center_x: float = cols_width * 0.5
+		left_x = maxf(left_x, board_center_x - lane_half_width + POLISH_EXIT_INNER_MARGIN)
+		right_x = minf(right_x, board_center_x + lane_half_width - POLISH_EXIT_INNER_MARGIN)
 	var stage: Vector3 = vehicle_node.position
 
 	# Primeiro o veiculo realmente sai do tabuleiro pela direcao autorizada
@@ -707,11 +818,11 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 		ExitDirection.Value.UP:
 			stage.z = lane_z
 		ExitDirection.Value.DOWN:
-			stage.z = rows_depth + margin
+			stage.z = framed_rows_depth + margin
 		ExitDirection.Value.LEFT:
-			stage.x = -margin
+			stage.x = left_x
 		ExitDirection.Value.RIGHT:
-			stage.x = cols_width + margin
+			stage.x = right_x
 	# ETAPA 8 (secao 9 -- bug da curva exagerada ao SAIR da vaga rumo a area
 	# de passageiros): so a direcao UP tem seu ponto de saida derivado de
 	# lane_z, que em fases POLISHED fica bem perto do tabuleiro (-0.15,
@@ -737,15 +848,15 @@ func _build_route_to_waiting_slot(vehicle_node: VehicleController, slot_index: i
 	# Depois entra numa faixa comum de embarque. O ultimo ponto e SEMPRE o
 	# Marker3D do slot logico convertido para o espaco correto.
 	if vehicle_node.exit_direction == ExitDirection.Value.DOWN:
-		var side_x: float = -margin
+		var side_x: float = left_x
 		if vehicle_node.position.x >= cols_width * 0.5:
-			side_x = cols_width + margin
-		route.append(Vector3(side_x, 0.31, rows_depth + margin))
+			side_x = right_x
+		route.append(Vector3(side_x, 0.31, framed_rows_depth + margin))
 		route.append(Vector3(side_x, 0.31, lane_z))
 	elif vehicle_node.exit_direction == ExitDirection.Value.LEFT:
-		route.append(Vector3(-margin, 0.31, lane_z))
+		route.append(Vector3(left_x, 0.31, lane_z))
 	elif vehicle_node.exit_direction == ExitDirection.Value.RIGHT:
-		route.append(Vector3(cols_width + margin, 0.31, lane_z))
+		route.append(Vector3(right_x, 0.31, lane_z))
 
 	route.append(Vector3(slot_position.x, 0.31, lane_z))
 	route.append(slot_position)
@@ -1035,6 +1146,18 @@ func _setup_camera() -> void:
 	var boarding_area_depth: float = POLISH_BOARDING_AREA_DEPTH if is_polished else BOARDING_AREA_DEPTH
 	var top_z: float = -boarding_area_depth
 	var bottom_z: float = float(state.board_rows) * CELL_SIZE + BOARD_EDGE_MARGIN
+	# ETAPA 8B (ticket secao 3/4): em fases POLISHED de baixa densidade o
+	# tabuleiro LOGICO pode ser bem maior que a area realmente ocupada por
+	# veiculos -- ver _content_bounds/_compute_content_bounds(). Corta
+	# bottom_z para a ultima linha ocupada (+ a MESMA folga de sempre,
+	# ver POLISH_CONTENT_DEPTH_MARGIN == BOARD_EDGE_MARGIN) SO quando isso
+	# reduz o enquadramento (minf contra o valor cheio de hoje); LARGE
+	# (950) e toda fase CLASSIC ficam byte-a-byte identicas, porque
+	# _content_bounds so e calculado quando is_polished e este ramo nunca
+	# roda quando content_density == LARGE.
+	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
+		var content_bottom_row: float = _content_bounds.position.y + _content_bounds.size.y
+		bottom_z = minf(bottom_z, content_bottom_row * CELL_SIZE + POLISH_CONTENT_DEPTH_MARGIN)
 
 	var top_fraction: float = HUD_TOP_UNSAFE_FRACTION + CAMERA_FRAME_SAFETY_FRACTION
 	var bottom_fraction: float = 1.0 - HUD_BOTTOM_UNSAFE_FRACTION - CAMERA_FRAME_SAFETY_FRACTION
@@ -1058,6 +1181,18 @@ func _setup_camera() -> void:
 		width_margin_scale = 1.0 / POLISH_WIDTH_FILL_FRACTION
 
 	var required_by_width: float = (float(state.board_cols) * CELL_SIZE + 2.7) / maxf(aspect, 0.35) * width_margin_scale
+	# ETAPA 8B (ticket secao 10): em fases pequenas quem manda na largura
+	# nao e o tabuleiro (que pode ser estreito) e sim o proprio bloco de
+	# vagas (4 ativas + 2 bloqueadas), ja compactado por content_density --
+	# ver BoardingAreaController.get_polish_lane_half_width(). So estreita
+	# o enquadramento quando o resultado e MENOR que o de hoje (minf);
+	# LARGE (950) tem tabuleiro mais largo que o bloco de vagas, entao
+	# esse ramo nunca muda o valor de 950.
+	if is_polished and content_density != ContentDensity.LARGE and _content_bounds.size != Vector2.ZERO:
+		var content_width: float = _content_bounds.size.x * CELL_SIZE
+		var lane_width: float = boarding_area.get_polish_lane_half_width() * 2.0
+		var required_by_width_content: float = maxf(content_width, lane_width) / maxf(aspect, 0.35) * width_margin_scale
+		required_by_width = minf(required_by_width, required_by_width_content)
 	# Tamanho minimo pra caber (area de embarque + tabuleiro + folga) exatamente
 	# entre as duas fracoes de tela acima (ou dentro da faixa encolhida, no
 	# PolishTest).
