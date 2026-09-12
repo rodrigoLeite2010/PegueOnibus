@@ -55,6 +55,11 @@ const POLISH_SLOT_DEPTH := 2.40
 const POLISH_LOCKED_SLOT_WIDTH := 0.75
 const POLISH_SLOT_GAP := 0.28
 const POLISH_SLOT_GAP_TO_BOARD := 0.15
+# ETAPA 8B: folga extra que a AccessLane sempre soma alem da largura real
+# do bloco de vagas (ver _add_boarding_box("AccessLane", ...) abaixo) --
+# nomeada para ser reaproveitada por get_polish_lane_half_width() sem
+# duplicar o numero.
+const POLISH_ACCESS_LANE_PAD := 0.60
 # ETAPA 6B (item 9): passageiros e vagas mais proximos -- leitura imediata
 # "PASSAGEIROS -> DOCKS -> ESTACIONAMENTO" como camadas conectadas, sem
 # faixa vazia entre a fila e as vagas. POLISH_BOARDING_AREA_DEPTH (usada so
@@ -74,6 +79,9 @@ const POLISH_PARKED_YAW_DEGREES := 180.0
 # rapido do que a duracao de cada bump, entao guardamos o tween atual pra
 # poder matar o anterior antes de comecar um novo.
 var _slot_label_pop_tweens: Dictionary = {}
+# ETAPA 8B: ultimo total_row_width calculado por _setup_polish() -- ver
+# get_polish_lane_half_width() acima.
+var _polish_row_width: float = 0.0
 
 
 # Chamado por GameController._load_level_number() logo depois de
@@ -81,7 +89,7 @@ var _slot_label_pop_tweens: Dictionary = {}
 # embarque fisica: os slots continuam sendo definidos pela regra (GameEngine
 # via waiting_slots_count), mas agora existe uma plataforma/rua visivel no
 # mesmo mundo 3D.
-func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_mode: bool) -> void:
+func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_mode: bool, dock_width_scale: float = 1.0) -> void:
 	for child: Node in get_children():
 		child.free()
 
@@ -94,7 +102,7 @@ func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_m
 	# normal: _setup_normal() abaixo e byte-a-byte a MESMA funcao de antes da
 	# Etapa 2B/2C (nunca mais tocada desde entao, so movida de arquivo).
 	if polish_mode:
-		_setup_polish(waiting_slots_count, board_cols, cell_size)
+		_setup_polish(waiting_slots_count, board_cols, cell_size, dock_width_scale)
 	else:
 		_setup_normal(waiting_slots_count, board_cols, cell_size)
 
@@ -104,6 +112,15 @@ func setup(waiting_slots_count: int, board_cols: int, cell_size: float, polish_m
 # entrada da vaga, pra nunca cruzar lateralmente por cima do piso dela).
 func get_slot_gap_to_board() -> float:
 	return POLISH_SLOT_GAP_TO_BOARD
+
+# ETAPA 8B: unica fonte de verdade da largura real do bloco de vagas
+# (4 ativas + 2 bloqueadas + gaps, ja escalada pela densidade da fase --
+# ver dock_width_scale em setup()/_setup_polish()), incluindo a mesma
+# folga da AccessLane (POLISH_ACCESS_LANE_PAD). GameController usa isto
+# pra enquadrar a camera e cortar rotas de saida SEM duplicar a formula
+# de total_row_width aqui -- ver _build_route_to_waiting_slot/_setup_camera.
+func get_polish_lane_half_width() -> float:
+	return (_polish_row_width + POLISH_ACCESS_LANE_PAD) * 0.5
 
 func get_slot_marker(slot_index: int) -> Marker3D:
 	return get_node_or_null("Slot%d" % slot_index) as Marker3D
@@ -389,9 +406,21 @@ func _setup_normal(waiting_slots_count: int, board_cols: int, cell_size: float) 
 # Marker3D Slot0..Slot3 exatamente no centro geometrico de cada retangulo
 # (o veiculo estacionado usa esse Marker3D direto como posicao final -- ver
 # GameController._process_vehicle_tap).
-func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) -> void:
+func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float, dock_width_scale: float = 1.0) -> void:
 	var count: int = mini(maxi(waiting_slots_count, 1), ACTIVE_BOARDING_SLOTS)
 	var board_width: float = float(board_cols) * cell_size
+
+	# ETAPA 8B (ticket secao 10): em fases POLISHED de densidade menor, as
+	# 4 vagas ativas + 2 bloqueadas ocupam quase a largura toda mesmo com
+	# poucos veiculos. dock_width_scale (vindo de GameController, derivado
+	# de ContentDensity) compacta so o GAP entre vagas e a largura das
+	# bloqueadas -- a largura da vaga ATIVA (POLISH_SLOT_WIDTH) nunca muda,
+	# pois tem so ~4.6% de folga sobre o footprint real do small_car (ver
+	# ENTREGA_ETAPA_6B.md); reduzi-la arriscaria reintroduzir o carro
+	# "transbordando" da vaga. dock_width_scale=1.0 (LARGE/950 e toda fase
+	# que nao passar o parametro) reproduz exatamente os valores de sempre.
+	var effective_locked_width: float = POLISH_LOCKED_SLOT_WIDTH * dock_width_scale
+	var effective_gap: float = POLISH_SLOT_GAP * dock_width_scale
 
 	# Fronteiras Z explicitas (em vez de "spacing"/formulas herdadas): a
 	# vaga fica logo acima do tabuleiro (borda proxima = -POLISH_SLOT_GAP_TO_BOARD),
@@ -413,12 +442,13 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 	for _i: int in range(ACTIVE_BOARDING_SLOTS):
 		slot_widths.append(POLISH_SLOT_WIDTH)
 	for _i: int in range(AD_LOCKED_SLOTS):
-		slot_widths.append(POLISH_LOCKED_SLOT_WIDTH)
+		slot_widths.append(effective_locked_width)
 
 	var total_row_width: float = 0.0
 	for w: float in slot_widths:
 		total_row_width += w
-	total_row_width += POLISH_SLOT_GAP * float(slot_widths.size() - 1)
+	total_row_width += effective_gap * float(slot_widths.size() - 1)
+	_polish_row_width = total_row_width
 
 	# Centro X de cada vaga, andando da esquerda pra direita a partir da
 	# borda esquerda do bloco inteiro (que fica centralizado no tabuleiro).
@@ -426,7 +456,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 	var cursor_x: float = board_width * 0.5 - total_row_width * 0.5
 	for w: float in slot_widths:
 		slot_centers_x.append(cursor_x + w * 0.5)
-		cursor_x += w + POLISH_SLOT_GAP
+		cursor_x += w + effective_gap
 
 	# ETAPA 6B (item 5): a plataforma unica que cobria a fileira inteira das
 	# vagas foi REMOVIDA de proposito. Era ela quem fazia as 4 vagas ativas
@@ -443,7 +473,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 	var lane_far_z: float = slot_row_near_z - 0.05
 	_add_boarding_box(
 		"AccessLane",
-		Vector3(total_row_width + 0.60, 0.035, maxf(lane_near_z - lane_far_z, 0.05)),
+		Vector3(total_row_width + POLISH_ACCESS_LANE_PAD, 0.035, maxf(lane_near_z - lane_far_z, 0.05)),
 		Vector3(board_width * 0.5, 0.035, (lane_near_z + lane_far_z) * 0.5),
 		Color("#5b6b86")
 	)
@@ -573,7 +603,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 		# contraste em vez de so pela cor do piso.
 		var frame := MeshInstance3D.new()
 		var frame_mesh := BoxMesh.new()
-		frame_mesh.size = Vector3(POLISH_LOCKED_SLOT_WIDTH, 0.02, POLISH_SLOT_DEPTH)
+		frame_mesh.size = Vector3(effective_locked_width, 0.02, POLISH_SLOT_DEPTH)
 		frame.mesh = frame_mesh
 		frame.position = Vector3(0.0, -0.32, 0.0)
 		var frame_material := StandardMaterial3D.new()
@@ -584,7 +614,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 
 		var pad := MeshInstance3D.new()
 		var pad_mesh := BoxMesh.new()
-		pad_mesh.size = Vector3(POLISH_LOCKED_SLOT_WIDTH - 0.12, 0.026, POLISH_SLOT_DEPTH - 0.16)
+		pad_mesh.size = Vector3(maxf(effective_locked_width - 0.12, 0.2), 0.026, POLISH_SLOT_DEPTH - 0.16)
 		pad.mesh = pad_mesh
 		pad.position = Vector3(0.0, -0.285, 0.0)
 		var pad_material := StandardMaterial3D.new()
@@ -592,7 +622,7 @@ func _setup_polish(waiting_slots_count: int, board_cols: int, cell_size: float) 
 		pad_material.roughness = 0.92
 		pad.material_override = pad_material
 		marker.add_child(pad)
-		_add_slot_shadow(marker, POLISH_LOCKED_SLOT_WIDTH)
+		_add_slot_shadow(marker, effective_locked_width)
 
 		_add_procedural_padlock(marker, Vector3(0.0, 0.62, 0.0))
 
