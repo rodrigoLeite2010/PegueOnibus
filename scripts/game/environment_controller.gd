@@ -72,11 +72,24 @@ func _ready() -> void:
 # argumento, entao o patio delas continua identico.
 var is_polish_test: bool = false
 
-func setup(p_rows: int, p_cols: int, p_cell_size: float, p_is_polish_test: bool = false) -> void:
+# ETAPA 8C (ticket secao 15): quando true, todo o cenario (grama, calcada,
+# acessos, arvores, bancos, postes) se redimensiona/centraliza a partir do
+# BOARD VISUAL COMPACTO (BoardController.get_visual_size()/get_board_center())
+# em vez do tabuleiro logico cheio -- ver _board_size()/_board_center()
+# abaixo, que sao as UNICAS 2 funcoes que toda a decoracao consulta. Em
+# LARGE/950/CLASSIC use_compact_board fica false e nada muda.
+var use_compact_board: bool = false
+var _visual_center_override: Vector3 = Vector3.ZERO
+var _visual_size_override: Vector2 = Vector2.ZERO
+
+func setup(p_rows: int, p_cols: int, p_cell_size: float, p_is_polish_test: bool = false, p_use_compact_board: bool = false, p_visual_center: Vector3 = Vector3.ZERO, p_visual_size: Vector2 = Vector2.ZERO) -> void:
 	rows = p_rows
 	cols = p_cols
 	cell_size = p_cell_size
 	is_polish_test = p_is_polish_test
+	use_compact_board = p_use_compact_board
+	_visual_center_override = p_visual_center
+	_visual_size_override = p_visual_size
 	rebuild()
 
 func rebuild() -> void:
@@ -121,9 +134,13 @@ func _add_group(group_name: String) -> Node3D:
 	return group
 
 func _board_size() -> Vector2:
+	if use_compact_board:
+		return _visual_size_override
 	return Vector2(cols * cell_size, rows * cell_size)
 
 func _board_center() -> Vector3:
+	if use_compact_board:
+		return _visual_center_override
 	return Vector3(cols * cell_size * 0.5, 0.0, rows * cell_size * 0.5)
 
 func _add_box(parent: Node3D, box_size: Vector3, box_position: Vector3, color: Color, roughness: float = 0.92) -> MeshInstance3D:
