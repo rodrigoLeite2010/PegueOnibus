@@ -5,20 +5,6 @@ const CELL_SIZE := 1.0
 const LEVEL_DIR := "res://levels"
 const LEVEL_PATTERN := "level_%03d.json"
 const HINT_COST := 15
-# Os passageiros agora aparecem no proprio mundo 3D, perto das vagas, em vez
-# de uma fila resumida no HUD. 40 cobre exatamente a maior capacidade oficial
-# (onibus), entao um onibus de 40 lugares pode mostrar 40 pessoas reais
-# aguardando e entrando uma a uma.
-const MAX_VISIBLE_QUEUE_DOLLS := 40
-const CROWD_COLUMNS := 8
-const CROWD_COLUMN_SPACING := 0.52
-const CROWD_ROW_SPACING := 0.58
-# Quando um passageiro passa a ser visivel pela primeira vez (fila com mais
-# gente do que MAX_VISIBLE_QUEUE_DOLLS de uma vez), ele nao aparece pronto na
-# posicao final: nasce um pouco mais a direita da propria fileira e anda ate
-# o lugar (ver _spawn_queue_doll_walking_in), reforcando a leitura de "entrando
-# pela direita, andando ate a fila".
-const CROWD_ENTRY_OFFSET_X := 1.35
 
 # --- Enquadramento da camera ---
 # A HUD (CanvasLayer, 2D) fica sempre por cima da cena 3D, ocupando uma faixa
@@ -70,22 +56,10 @@ const POLISH_CAMERA_HEIGHT := 12.5
 const POLISH_BOARD_FILL_FRACTION := 1.0
 const POLISH_WIDTH_FILL_FRACTION := 1.0
 
-# ETAPA 2B, item D (mantido/ajustado): fileiras em zigue-zague em vez da
-# "matriz perfeita" relatada. ETAPA 2C aumenta as colunas de 7 para 8 (menos
-# fileiras pra caber os mesmos 40 bonecos, ver POLISH_BOARDING_AREA_DEPTH)
-# especificamente pra tirar o grupo de baixo do titulo "FASE 950".
-const POLISH_CROWD_COLUMNS := 8
-const POLISH_CROWD_COLUMN_SPACING := 0.58
-const POLISH_CROWD_ROW_SPACING := 0.62
-const POLISH_CROWD_ROW_STAGGER := 0.29
-
-# ETAPA 4B: atraso entre o step_to() de um boneco da fila e o do proximo
-# quando a fila reorganiza pra fechar um buraco (_advance_queue_dolls_polished)
-# -- pedido explicito: "primeiro desloca / 0.02s / segundo / 0.02s / terceiro".
-const POLISH_QUEUE_ADVANCE_STAGGER := 0.02
 # Profundidade total (Z) reservada pela area de embarque da PolishTest, do
 # limite Z=0 do tabuleiro ate a fileira MAIS de tras de passageiros possivel
-# (pior caso: MAX_VISIBLE_QUEUE_DOLLS=40 bonecos, POLISH_CROWD_COLUMNS=8 ->
+# (pior caso: PassengerCrowdController.MAX_VISIBLE_QUEUE_DOLLS=40 bonecos,
+# PassengerCrowdController.POLISH_CROWD_COLUMNS=8 ->
 # ceil(40/8)=5 fileiras). Calculado, nao chutado, pra nunca mais deixar
 # nenhuma fileira de passageiro cair por tras do proprio limite reservado
 # (era exatamente o bug: a Etapa 2B usava a mesma BOARDING_AREA_DEPTH das
@@ -112,6 +86,14 @@ const POLISH_BOARDING_AREA_DEPTH := 5.5
 # (particulas procedurais, popups, feedback de vaga liberada); o
 # comportamento e byte-a-byte o mesmo, so mudou de arquivo.
 var _polish_effects: PolishEffectsController
+
+# ETAPA 7 (refatoracao segura): instanciado em _ready(), nunca editado na
+# cena .tscn -- ver PassengerCrowdController. setup() e chamado de novo a
+# cada _load_level_number() (ao contrario de _polish_effects, que so muda de
+# fase quando is_polish_test/board_cols mudam). Reune os bonecos 3D da fila
+# de passageiros que antes eram metodos privados deste script; o
+# comportamento e byte-a-byte o mesmo, so mudou de arquivo.
+var _passenger_crowd: PassengerCrowdController
 
 # ETAPA 6 (PolishTest, fase 950 exclusivamente): snapshot do Environment/luz
 # ORIGINAIS (fases normais), tirado uma unica vez em _ready() antes de
@@ -146,8 +128,6 @@ var current_level_number: int = 1
 var available_levels: Array[int] = []
 var _blocked_tap_count: int = 0
 var last_stars_earned: int = -1
-var _queue_dolls: Array[PassengerController] = []
-var _queue_reveal_count: int = 0
 # ETAPA 4 (Polish Test, fase 950 exclusivamente): vehicle_id -> quantos
 # embarques em cascata (_run_cascaded_boarding) ainda estao rodando para
 # aquele veiculo. Um veiculo so pode sair (drive_away_from_pickup) quando
@@ -173,6 +153,8 @@ func _ready() -> void:
 	_polish_effects = PolishEffectsController.new()
 	add_child(_polish_effects)
 	_polish_effects.setup(vfx_root, board)
+	_passenger_crowd = PassengerCrowdController.new()
+	add_child(_passenger_crowd)
 	# ETAPA 6: guarda o visual ORIGINAL antes de qualquer fase carregar (ver
 	# comentario dos vars _default_* acima).
 	if world_environment != null and world_environment.environment != null:
@@ -258,7 +240,8 @@ func _load_level_number(level_number: int) -> void:
 	board.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polish_test_level)
 	environment.setup(state.board_rows, state.board_cols, CELL_SIZE, is_polish_test_level)
 	boarding_area.setup(state.waiting_slots.size(), state.board_cols, CELL_SIZE, is_polish_test_level)
-	_rebuild_queue_dolls()
+	_passenger_crowd.setup(passengers_root, boarding_area, is_polish_test_level, state.board_cols, CELL_SIZE)
+	_passenger_crowd.rebuild_dolls(state.passenger_queue)
 	_spawn_vehicles()
 	_refresh_selectable_highlights()
 	_setup_camera()
@@ -535,7 +518,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 				# ETAPA 4 (item 3): passageiros da cor certa reagem (micro pop)
 				# antes do primeiro comecar a correr -- ver _play_boarding_events
 				# logo abaixo, que so dispara a corrida em si.
-				_react_queue_dolls_for_color(vehicle_node.color_id)
+				_passenger_crowd.react_for_color(vehicle_node.color_id)
 			else:
 				boarding_area.set_slot_label_text(final_marker, initial_count_text)
 				vehicle_node.set_waiting_slot_mode(true)
@@ -544,7 +527,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 
 	# Agora reproduzimos PassengerBoarded/SlotFreed na ordem dos eventos do motor.
 	await _play_boarding_events(events, boarding_dolls)
-	_sync_queue_dolls_to_state()
+	_passenger_crowd.sync_to_state(state.passenger_queue)
 
 	if _has_event(events, "Win"):
 		AudioManager.play_sfx("win")
@@ -808,7 +791,7 @@ func _play_boarding_events_polished(events: Array, reserved_dolls: Array[Passeng
 	var cascade_index_by_vehicle: Dictionary = {}
 	# ETAPA 4B: garante que a fila so reorganiza visualmente UMA vez por leva,
 	# logo depois que o primeiro passageiro dela ja tiver comecado a sair de
-	# verdade (ver comentario completo em _advance_queue_dolls_polished e em
+	# verdade (ver comentario completo em PassengerCrowdController.advance_dolls_polished e em
 	# _reserve_boarding_dolls, que deliberadamente NAO reorganiza mais aqui).
 	var queue_advance_started := false
 	for item: Variant in events:
@@ -837,10 +820,10 @@ func _play_boarding_events_polished(events: Array, reserved_dolls: Array[Passeng
 			# antes desta linha executar -- ou seja, o primeiro passageiro desta
 			# leva ja esta visivelmente saindo da fila neste ponto. So agora e
 			# seguro reorganizar o resto da fila (fire-and-forget, com o stagger
-			# proprio de _advance_queue_dolls_polished).
+			# proprio de PassengerCrowdController.advance_dolls_polished).
 			if not queue_advance_started:
 				queue_advance_started = true
-				_advance_queue_dolls_polished()
+				_passenger_crowd.advance_dolls_polished()
 		elif event.type == "SlotFreed":
 			var completed_vehicle_id: String = String(event.payload.get("vehicle_id", ""))
 			# Item 16: espera os embarques visuais em cascata desse veiculo
@@ -927,25 +910,11 @@ func _polish_cascade_interval(vehicle_type_id: String) -> float:
 		_:
 			return 0.11
 
-# Item 3 do pedido: reage (micro pop) nos primeiros bonecos visiveis da fila
-# cuja cor bate com a do veiculo que acabou de estacionar -- so cosmetico,
-# nunca mexe em _queue_dolls nem em quem vai realmente embarcar (isso
-# continua 100% decidido por _reserve_boarding_dolls/eventos do GameEngine).
-# Limitado a poucos bonecos de proposito (o pedido permite nao aplicar aos
-# 40 de uma vez, por performance).
-func _react_queue_dolls_for_color(color_id: String) -> void:
-	var reacted := 0
-	for doll: PassengerController in _queue_dolls:
-		if reacted >= 10:
-			break
-		if is_instance_valid(doll) and doll.color_id == color_id:
-			doll.polish_color_react()
-			reacted += 1
 
 # Chamada SINCRONA, no instante do toque (antes de qualquer await em
 # _process_vehicle_tap) -- reserva, na ordem certa, um boneco 3D real da
 # fila para cada evento "PassengerBoarded" desta leva, e ja tira esses
-# bonecos de _queue_dolls. Isso e o que garante a identidade certa mesmo com
+# bonecos da fila visual (PassengerCrowdController). Isso e o que garante a identidade certa mesmo com
 # varios veiculos animando ao mesmo tempo: quem reserva primeiro (ordem real
 # dos toques) fica com os bonecos da frente, nao quem termina de andar
 # primeiro.
@@ -956,147 +925,21 @@ func _reserve_boarding_dolls(events: Array) -> Array[PassengerController]:
 		var event: GameEvent = item as GameEvent
 		if event != null and event.type == "PassengerBoarded":
 			var color_id: String = String(event.payload.get("color_id", "red"))
-			reserved.append(_pop_front_queue_doll(color_id))
+			reserved.append(_passenger_crowd.pop_front_doll(color_id))
 			popped_any = true
 	# ETAPA 4B: na fase 950 a reorganizacao VISUAL da fila (bonecos restantes
 	# deslizando pra fechar o buraco) fica pra depois -- ver
-	# _play_boarding_events_polished/_advance_queue_dolls_polished, chamada so
+	# _play_boarding_events_polished/PassengerCrowdController.advance_dolls_polished, chamada so
 	# quando o primeiro passageiro desta leva ja tiver claramente comecado a
 	# sair. Antes disso o embarque nem comecou visualmente (o veiculo ainda
 	# vai dirigir ate a vaga), entao reorganizar aqui (na hora do toque, como
 	# a fase normal sempre fez) dava a impressao de "a fila inteira mudou antes
-	# de alguem sair". O pop/reserva em si (_pop_front_queue_doll acima)
+	# de alguem sair". O pop/reserva em si (PassengerCrowdController.pop_front_doll acima)
 	# continua exatamente aqui, sincrono -- e o que garante a identidade certa
 	# com toques concorrentes, isso nunca muda.
 	if popped_any and state.level_id != POLISH_TEST_LEVEL_ID:
-		_advance_queue_dolls()
+		_passenger_crowd.advance_dolls()
 	return reserved
-
-# --- Passageiros 3D esperando perto das vagas ---
-# Em vez de resumir a fila no topo da HUD, mostramos pessoas reais no mundo.
-# A ordem visual continua sendo a mesma ordem logica de state.passenger_queue.
-# Ate 40 ficam visiveis de uma vez, exatamente a capacidade maxima oficial.
-
-func _queue_slot_position(slot_index: int) -> Vector3:
-	var queue_marker: Marker3D = boarding_area.get_node_or_null("PassengerQueueStart") as Marker3D
-	var base_local: Vector3
-	if queue_marker != null:
-		base_local = passengers_root.to_local(queue_marker.global_position)
-	else:
-		base_local = Vector3(float(state.board_cols) * CELL_SIZE * 0.5, 0.20, -1.28)
-
-	# Grade compacta centralizada: 10 pessoas por linha, ate 4 linhas para um
-	# onibus de 40 lugares. A primeira linha fica mais perto dos carros.
-	# ETAPA 2B, item D: so a fase 950 usa fileiras em zigue-zague (linhas
-	# alternadas deslocadas por meio espacamento) em vez da grade perfeita
-	# ("planilha") relatada, com colunas/espacamento levemente maiores -- toda
-	# fase normal cai exatamente nas mesmas CROWD_COLUMNS/CROWD_COLUMN_SPACING/
-	# CROWD_ROW_SPACING de sempre, com stagger_offset sempre 0.0.
-	var is_polish_test: bool = state.level_id == POLISH_TEST_LEVEL_ID
-	var columns_per_row: int = POLISH_CROWD_COLUMNS if is_polish_test else CROWD_COLUMNS
-	var column_spacing: float = POLISH_CROWD_COLUMN_SPACING if is_polish_test else CROWD_COLUMN_SPACING
-	var row_spacing: float = POLISH_CROWD_ROW_SPACING if is_polish_test else CROWD_ROW_SPACING
-
-	var column: int = slot_index % columns_per_row
-	var row: int = slot_index / columns_per_row
-	var row_count: int = mini(columns_per_row, MAX_VISIBLE_QUEUE_DOLLS - row * columns_per_row)
-	var row_width: float = float(maxi(row_count - 1, 0)) * column_spacing
-	var stagger_offset: float = 0.0
-	if is_polish_test and row % 2 == 1:
-		stagger_offset = POLISH_CROWD_ROW_STAGGER * column_spacing
-	var x_offset: float = float(column) * column_spacing - row_width * 0.5 + stagger_offset
-	var z_offset: float = -float(row) * row_spacing
-	return base_local + Vector3(x_offset, 0.0, z_offset)
-
-func _rebuild_queue_dolls() -> void:
-	for doll: PassengerController in _queue_dolls:
-		if is_instance_valid(doll):
-			doll.free()
-	_queue_dolls.clear()
-	_queue_reveal_count = mini(state.passenger_queue.size(), MAX_VISIBLE_QUEUE_DOLLS)
-	for index: int in range(_queue_reveal_count):
-		_queue_dolls.append(_spawn_queue_doll(index, state.passenger_queue[index]))
-
-func _spawn_queue_doll(spawn_index: int, color_id: String) -> PassengerController:
-	var doll := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
-	passengers_root.add_child(doll)
-	doll.setup(color_id, state.level_id == POLISH_TEST_LEVEL_ID)
-	doll.position = _queue_slot_position(_queue_dolls.size())
-	return doll
-
-# Mesma coisa que _spawn_queue_doll, mas para quando um boneco passa a ser
-# visivel DEPOIS que a fase ja comecou (ver _sync_queue_dolls_to_state): em
-# vez de aparecer pronto na posicao final, nasce mais a direita (fora da
-# propria fileira) e anda ate o lugar com a mesma animacao de passo usada na
-# fila avancando -- e a entrada "vindo andando da direita" pedida.
-func _spawn_queue_doll_walking_in(slot_index: int, color_id: String) -> PassengerController:
-	var doll := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
-	passengers_root.add_child(doll)
-	doll.setup(color_id, state.level_id == POLISH_TEST_LEVEL_ID)
-	var target: Vector3 = _queue_slot_position(slot_index)
-	doll.position = target + Vector3(CROWD_ENTRY_OFFSET_X, 0.0, 0.0)
-	doll.step_to(target)
-	return doll
-
-func _pop_front_queue_doll(color_id: String) -> PassengerController:
-	if not _queue_dolls.is_empty():
-		return _queue_dolls.pop_front()
-	var fallback := preload("res://scenes/game/Passenger.tscn").instantiate() as PassengerController
-	passengers_root.add_child(fallback)
-	fallback.setup(color_id, state.level_id == POLISH_TEST_LEVEL_ID)
-	fallback.position = _queue_slot_position(0)
-	return fallback
-
-func _advance_queue_dolls() -> void:
-	# Cada passageiro restante avanca para a proxima posicao livre da grade.
-	for index: int in range(_queue_dolls.size()):
-		var doll: PassengerController = _queue_dolls[index]
-		if is_instance_valid(doll):
-			doll.step_to(_queue_slot_position(index))
-
-
-# ETAPA 4B ("REORGANIZACAO DA FILA"): variante da funcao acima, exclusiva da
-# fase 950 -- em vez de mandar TODOS os step_to() no mesmo instante (o que
-# lia como um bloco inteiro reagindo junto), cada boneco restante recebe um
-# pequeno atraso (POLISH_QUEUE_ADVANCE_STAGGER) em relacao ao anterior antes
-# do seu proprio step_to() disparar -- step_to() ja anima cada um em 0.26s
-# (dentro dos "0.20-0.28s" pedidos), entao o resultado e um efeito de onda
-# sem sobreposicao. NAO precisa terminar de percorrer os 40 bonecos de uma
-# vez: e fire-and-forget (chamada sem "await" -- ver _play_boarding_events_
-# polished), entao o resto do jogo nunca fica bloqueado esperando a fila
-# terminar de reorganizar visualmente.
-func _advance_queue_dolls_polished() -> void:
-	var count: int = _queue_dolls.size()
-	for index: int in range(count):
-		var doll: PassengerController = _queue_dolls[index] if index < _queue_dolls.size() else null
-		if is_instance_valid(doll):
-			doll.step_to(_queue_slot_position(index))
-		if index < count - 1:
-			await get_tree().create_timer(POLISH_QUEUE_ADVANCE_STAGGER).timeout
-
-
-# Ressincroniza a fila visual com a fila LOGICA atual. Roda depois de cada
-# leva de embarque. NAO destroi mais todos os bonecos toda vez (isso fazia a
-# fila inteira "piscar"/teleportar de novo a cada carro que terminava,
-# inclusive durante toques concorrentes que ainda estavam com bonecos no meio
-# do caminho): so ajusta a DIFERENCA. Quem ja esta na tela e continua
-# correspondendo a fila logica (a ordem e sempre preservada por
-# _reserve_boarding_dolls/_advance_queue_dolls, que ja tiram e reordenam os
-# bonecos certos no instante do toque) fica exatamente onde esta; so entra
-# gente nova quando a fila logica tem mais passageiros do que os bonecos
-# atuais mostram (fases com mais de MAX_VISIBLE_QUEUE_DOLLS passageiros no
-# total) -- e so esses bonecos novos "andam" ate o lugar vindo de fora da
-# fileira, pela direita (ver _spawn_queue_doll_walking_in).
-func _sync_queue_dolls_to_state() -> void:
-	var target_count: int = mini(state.passenger_queue.size(), MAX_VISIBLE_QUEUE_DOLLS)
-	while _queue_dolls.size() > target_count:
-		var extra: PassengerController = _queue_dolls.pop_back()
-		if is_instance_valid(extra):
-			extra.free()
-	while _queue_dolls.size() < target_count:
-		var slot_index: int = _queue_dolls.size()
-		_queue_dolls.append(_spawn_queue_doll_walking_in(slot_index, state.passenger_queue[slot_index]))
-	_queue_reveal_count = _queue_dolls.size()
 
 func _message_from_events(events: Array) -> String:
 	if _has_event(events, "Win"):
@@ -1263,5 +1106,5 @@ func _clear_all_visuals() -> void:
 		for child: Node in root.get_children():
 			child.free()
 	vehicle_nodes.clear()
-	_queue_dolls.clear()
+	_passenger_crowd.reset()
 
