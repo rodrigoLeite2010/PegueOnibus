@@ -23,14 +23,36 @@ const COLOR_PARKING_LINE := Color(1.0, 1.0, 1.0, 0.16)
 # chama setup() com este argumento, entao nada muda pra elas.
 var is_polish_test: bool = false
 
+# ETAPA 8C (ticket secoes 3/5/6/16): transformacao visual do tabuleiro para
+# fases POLISHED de ContentDensity.SMALL. GameEngine/state SEMPRE continuam
+# recebendo rows/cols logicos inteiros (nunca mudam) -- isto so afeta O QUE
+# E DESENHADO e as funcoes visual_x()/visual_z() usadas por GameController
+# pra posicionar veiculos/rotas/camera/ambiente. Margem (em celulas) somada
+# ao redor do retangulo de conteudo real antes de cortar/comprimir o board
+# visualmente (ver _recompute_compact_bounds).
+const COMPACT_MARGIN_CELLS := 1.0
+
+var use_compact_board: bool = false
+# Fator de compressao aplicado IGUALMENTE aos dois eixos (X ancorado no
+# centro do board -- mesmo ponto que BoardingAreaController ja usa pra
+# centralizar vagas/passageiros -- e Z ancorado em 0, a borda proxima do
+# patio de embarque). 1.0 = sem compressao (comportamento de sempre).
+var compact_scale: float = 1.0
+var _compact_crop_offset_z: float = 0.0
+var _compact_visual_width: float = 0.0
+var _compact_visual_depth: float = 0.0
+
 func _ready() -> void:
 	rebuild()
 
-func setup(p_rows: int, p_cols: int, p_cell_size: float, p_is_polish_test: bool = false) -> void:
+func setup(p_rows: int, p_cols: int, p_cell_size: float, p_is_polish_test: bool = false, p_use_compact_board: bool = false, p_content_bounds: Rect2 = Rect2(), p_compact_scale: float = 1.0) -> void:
 	rows = p_rows
 	cols = p_cols
 	cell_size = p_cell_size
 	is_polish_test = p_is_polish_test
+	use_compact_board = p_use_compact_board
+	compact_scale = p_compact_scale if use_compact_board else 1.0
+	_recompute_compact_bounds(p_content_bounds)
 	rebuild()
 
 func rebuild() -> void:
@@ -47,11 +69,59 @@ func rebuild() -> void:
 	_add_exit_gates()
 
 func get_board_center() -> Vector3:
+	if use_compact_board:
+		return Vector3(cols * cell_size * 0.5, 0.0, _compact_visual_depth * 0.5)
 	return Vector3(cols * cell_size * 0.5, 0.0, rows * cell_size * 0.5)
+
+# ETAPA 8C: unica fonte de verdade do corte+compressao visual do board.
+# min_row/max_row do conteudo real (+ margem) definem o que e cortado no
+# eixo Z (linhas vazias entre o patio de embarque e o primeiro veiculo, e
+# depois do ultimo); compact_scale entao comprime o que sobrou. O eixo X
+# nunca e cortado (so comprimido em torno do centro fixo do board), porque
+# nas fases SMALL reais o conteudo ja fica centralizado nesse mesmo ponto.
+func _recompute_compact_bounds(content_bounds: Rect2) -> void:
+	if not use_compact_board:
+		_compact_crop_offset_z = 0.0
+		_compact_visual_width = cols * cell_size
+		_compact_visual_depth = rows * cell_size
+		return
+	var min_row: float = maxf(content_bounds.position.y - COMPACT_MARGIN_CELLS, 0.0)
+	var max_row: float = minf(content_bounds.position.y + content_bounds.size.y + COMPACT_MARGIN_CELLS, float(rows))
+	_compact_crop_offset_z = min_row * cell_size
+	var cropped_depth: float = maxf(max_row - min_row, 1.0) * cell_size
+	_compact_visual_depth = cropped_depth * compact_scale
+	_compact_visual_width = cols * cell_size * compact_scale
+
+# Converte uma coordenada X do board LOGICO (col * cell_size, etc.) pra a
+# posicao visual correspondente. Ancorado no centro fixo do board (mesmo
+# ponto de sempre) -- por isso docks/passageiros (que ja centralizam nesse
+# ponto) continuam alinhados sem precisar de nenhuma mudanca neles.
+func visual_x(x: float) -> float:
+	if not use_compact_board:
+		return x
+	var center_x: float = cols * cell_size * 0.5
+	return center_x + (x - center_x) * compact_scale
+
+# Converte uma coordenada Z do board LOGICO pra a posicao visual
+# correspondente. Ancorado em Z=0 (a borda perto do patio de embarque, que
+# nunca e cortada) -- reduz simultaneamente o vao vazio antes do primeiro
+# veiculo E o espacamento entre veiculos, com uma unica formula afim.
+func visual_z(z: float) -> float:
+	if not use_compact_board:
+		return z
+	return (z - _compact_crop_offset_z) * compact_scale
+
+func get_visual_size() -> Vector2:
+	return Vector2(_compact_visual_width, _compact_visual_depth)
+
+func get_visual_scale() -> float:
+	return compact_scale
 
 func _add_floor_shadow() -> void:
 	var shadow := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
 	var shadow_color: Color = COLOR_ASPHALT_SHADOW
 	var spread: float = 0.72
 	if is_polish_test:
@@ -61,18 +131,20 @@ func _add_floor_shadow() -> void:
 		# entao o tabuleiro le como uma pequena plataforma flutuando sobre
 		# o patio, nao um retangulo colado no chao.
 		spread = 1.05
-	mesh.size = Vector3(cols * cell_size + spread, 0.05, rows * cell_size + spread)
+	mesh.size = Vector3(width + spread, 0.05, depth + spread)
 	shadow.mesh = mesh
-	shadow.position = Vector3(cols * cell_size * 0.5, -0.17, rows * cell_size * 0.5 + 0.12)
+	shadow.position = Vector3(cols * cell_size * 0.5, -0.17, depth * 0.5 + 0.12)
 	shadow.material_override = _make_material(shadow_color, 1.0)
 	add_child(shadow)
 
 func _add_floor() -> void:
 	var floor_mesh_instance := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
-	mesh.size = Vector3(cols * cell_size + 0.34, 0.11, rows * cell_size + 0.34)
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
+	mesh.size = Vector3(width + 0.34, 0.11, depth + 0.34)
 	floor_mesh_instance.mesh = mesh
-	floor_mesh_instance.position = Vector3(cols * cell_size * 0.5, -0.07, rows * cell_size * 0.5)
+	floor_mesh_instance.position = Vector3(cols * cell_size * 0.5, -0.07, depth * 0.5)
 	var floor_color: Color = PolishPalette.ASPHALT if is_polish_test else COLOR_ASPHALT
 	floor_mesh_instance.material_override = _make_material(floor_color, 0.88)
 	add_child(floor_mesh_instance)
@@ -81,9 +153,9 @@ func _add_floor() -> void:
 		# diferenca de tonalidade pedida no item 2, sem textura nenhuma.
 		var core := MeshInstance3D.new()
 		var core_mesh := BoxMesh.new()
-		core_mesh.size = Vector3(cols * cell_size + 0.02, 0.005, rows * cell_size + 0.02)
+		core_mesh.size = Vector3(width + 0.02, 0.005, depth + 0.02)
 		core.mesh = core_mesh
-		core.position = Vector3(cols * cell_size * 0.5, -0.015, rows * cell_size * 0.5)
+		core.position = Vector3(cols * cell_size * 0.5, -0.015, depth * 0.5)
 		core.material_override = _make_material(floor_color.lightened(0.08), 0.88)
 		add_child(core)
 
@@ -100,12 +172,13 @@ func _add_parking_markings() -> void:
 	var line_material := _make_material(line_color, 1.0)
 	line_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	line_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
 	for col: int in range(1, cols):
 		var line := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
-		mesh.size = Vector3(0.03, 0.02, rows * cell_size * 0.86)
+		mesh.size = Vector3(0.03, 0.02, depth * 0.86)
 		line.mesh = mesh
-		line.position = Vector3(col * cell_size, 0.008, rows * cell_size * 0.5)
+		line.position = Vector3(visual_x(col * cell_size), 0.008, depth * 0.5)
 		line.material_override = line_material
 		add_child(line)
 	# Linhas na outra direcao (uma por divisa de linha), pra fechar o
@@ -113,25 +186,37 @@ func _add_parking_markings() -> void:
 	# divisoes de coluna, o que lia como "faixas" e nao "vagas delimitadas".
 	# Mesmo material/opacidade das linhas de coluna, ainda mais discreta que
 	# o grid de debug (show_debug_grid), que continua reservado para depuracao.
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
 	for row: int in range(1, rows):
+		var line_z: float = visual_z(row * cell_size)
+		if use_compact_board and (line_z < 0.0 or line_z > depth):
+			continue
 		var row_line := MeshInstance3D.new()
 		var row_mesh := BoxMesh.new()
-		row_mesh.size = Vector3(cols * cell_size * 0.86, 0.02, 0.03)
+		row_mesh.size = Vector3(width * 0.86, 0.02, 0.03)
 		row_line.mesh = row_mesh
-		row_line.position = Vector3(cols * cell_size * 0.5, 0.008, row * cell_size)
+		row_line.position = Vector3(cols * cell_size * 0.5, 0.008, line_z)
 		row_line.material_override = line_material
 		add_child(row_line)
 
 func _add_border() -> void:
 	var curb_color: Color = PolishPalette.BORDER if is_polish_test else COLOR_CURB
 	var border_material := _make_material(curb_color, 0.85)
-	var width := cols * cell_size
-	var depth := rows * cell_size
+	# ETAPA 8C: width/depth aqui sao a EXTENSAO visual (compacta quando
+	# ativo); center_x e o ancora fixo de sempre (nunca muda -- e nele que
+	# docks/passageiros ja se centralizam); left_x/right_x sao as bordas
+	# reais do board visual em torno desse ancora (== 0/width quando nao
+	# compacto, exatamente como antes).
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
+	var center_x := cols * cell_size * 0.5
+	var left_x := center_x - width * 0.5
+	var right_x := center_x + width * 0.5
 	var specs: Array[Dictionary] = [
-		{"pos": Vector3(width * 0.5, 0.02, -0.13), "size": Vector3(width + 0.32, 0.05, 0.11)},
-		{"pos": Vector3(width * 0.5, 0.02, depth + 0.13), "size": Vector3(width + 0.32, 0.05, 0.11)},
-		{"pos": Vector3(-0.13, 0.02, depth * 0.5), "size": Vector3(0.11, 0.05, depth + 0.32)},
-		{"pos": Vector3(width + 0.13, 0.02, depth * 0.5), "size": Vector3(0.11, 0.05, depth + 0.32)},
+		{"pos": Vector3(center_x, 0.02, -0.13), "size": Vector3(width + 0.32, 0.05, 0.11)},
+		{"pos": Vector3(center_x, 0.02, depth + 0.13), "size": Vector3(width + 0.32, 0.05, 0.11)},
+		{"pos": Vector3(left_x - 0.13, 0.02, depth * 0.5), "size": Vector3(0.11, 0.05, depth + 0.32)},
+		{"pos": Vector3(right_x + 0.13, 0.02, depth * 0.5), "size": Vector3(0.11, 0.05, depth + 0.32)},
 	]
 	for spec: Dictionary in specs:
 		var edge := MeshInstance3D.new()
@@ -161,14 +246,17 @@ func _thin_highlight_mesh(base_size: Vector3) -> BoxMesh:
 # arredondam visualmente a quina reta do BoxMesh sem precisar de nenhuma
 # malha customizada (permanece 100% procedural/mobile-friendly).
 func _add_rounded_corners() -> void:
-	var width := cols * cell_size
-	var depth := rows * cell_size
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
+	var center_x := cols * cell_size * 0.5
+	var left_x := center_x - width * 0.5
+	var right_x := center_x + width * 0.5
 	var corner_color: Color = PolishPalette.BORDER
 	var corners: Array[Vector3] = [
-		Vector3(-0.13, 0.02, -0.13),
-		Vector3(width + 0.13, 0.02, -0.13),
-		Vector3(-0.13, 0.02, depth + 0.13),
-		Vector3(width + 0.13, 0.02, depth + 0.13),
+		Vector3(left_x - 0.13, 0.02, -0.13),
+		Vector3(right_x + 0.13, 0.02, -0.13),
+		Vector3(left_x - 0.13, 0.02, depth + 0.13),
+		Vector3(right_x + 0.13, 0.02, depth + 0.13),
 	]
 	for corner: Vector3 in corners:
 		var cap := MeshInstance3D.new()
@@ -185,32 +273,41 @@ func _add_rounded_corners() -> void:
 func _add_grid_lines() -> void:
 	var line_material := _make_material(Color(1, 1, 1, 0.38), 1.0)
 	line_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
+	var center_x := cols * cell_size * 0.5
 	for row: int in range(rows + 1):
+		var z: float = visual_z(row * cell_size)
+		if use_compact_board and (z < -0.001 or z > depth + 0.001):
+			continue
 		var line := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
-		mesh.size = Vector3(cols * cell_size, 0.018, 0.018)
+		mesh.size = Vector3(width, 0.018, 0.018)
 		line.mesh = mesh
-		line.position = Vector3(cols * cell_size * 0.5, 0.005, row * cell_size)
+		line.position = Vector3(center_x, 0.005, z)
 		line.material_override = line_material
 		add_child(line)
 	for col: int in range(cols + 1):
 		var line := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
-		mesh.size = Vector3(0.018, 0.018, rows * cell_size)
+		mesh.size = Vector3(0.018, 0.018, depth)
 		line.mesh = mesh
-		line.position = Vector3(col * cell_size, 0.006, rows * cell_size * 0.5)
+		line.position = Vector3(visual_x(col * cell_size), 0.006, depth * 0.5)
 		line.material_override = line_material
 		add_child(line)
 
 func _add_exit_gates() -> void:
 	var gate_material := _make_material(COLOR_ACCENT, 0.55)
-	var width := cols * cell_size
-	var depth := rows * cell_size
+	var width := _compact_visual_width if use_compact_board else cols * cell_size
+	var depth := _compact_visual_depth if use_compact_board else rows * cell_size
+	var center_x := cols * cell_size * 0.5
+	var left_x := center_x - width * 0.5
+	var right_x := center_x + width * 0.5
 	var gate_specs: Array[Dictionary] = [
-		{"pos": Vector3(width * 0.5, 0.045, -0.23), "size": Vector3(1.5, 0.035, 0.11)},
-		{"pos": Vector3(width * 0.5, 0.045, depth + 0.23), "size": Vector3(1.5, 0.035, 0.11)},
-		{"pos": Vector3(-0.23, 0.045, depth * 0.5), "size": Vector3(0.11, 0.035, 1.5)},
-		{"pos": Vector3(width + 0.23, 0.045, depth * 0.5), "size": Vector3(0.11, 0.035, 1.5)},
+		{"pos": Vector3(center_x, 0.045, -0.23), "size": Vector3(1.5, 0.035, 0.11)},
+		{"pos": Vector3(center_x, 0.045, depth + 0.23), "size": Vector3(1.5, 0.035, 0.11)},
+		{"pos": Vector3(left_x - 0.23, 0.045, depth * 0.5), "size": Vector3(0.11, 0.035, 1.5)},
+		{"pos": Vector3(right_x + 0.23, 0.045, depth * 0.5), "size": Vector3(0.11, 0.035, 1.5)},
 	]
 	for spec: Dictionary in gate_specs:
 		var gate := MeshInstance3D.new()
