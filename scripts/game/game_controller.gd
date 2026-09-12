@@ -37,17 +37,28 @@ const CAMERA_FRAME_SAFETY_FRACTION := 0.02
 # Substitui as comparacoes espalhadas "state.level_id == 950" por uma unica
 # fonte: is_polished, derivado de presentation_profile, calculado UMA vez por
 # fase carregada (ver _load_level_number -> _resolve_presentation_profile()).
-# POLISHED_LEVEL_IDS e a UNICA lista que decide quais fases usam a
-# apresentacao polida -- hoje: a PolishTest (950, sempre, usada como teste de
-# stress) e as 3 fases reais piloto desta etapa (1, 2, 3). Todas as demais
-# fases continuam CLASSIC, sem nenhuma mudanca de comportamento/aparencia.
-# IMPORTANTE (ticket Etapa 8, secao 4): isto migra so APRESENTACAO (camera,
-# docks, fila 3D, efeitos, HUD) -- NUNCA conteudo (veiculos, capacidades,
-# vagas, dificuldade, board ou regras), que continuam vindo do proprio
-# level_XXX.json de cada fase, sem nenhuma alteracao aqui.
+# ETAPA 9 (ticket secao 4): POLISHED deixou de ser uma lista de level_id
+# cadastrados manualmente (POLISHED_LEVEL_IDS, usada so durante a migracao
+# gradual das Etapas 8/8B/8C) e virou o PADRAO de apresentacao para
+# qualquer fase real do jogo -- JSON ou procedural, sem excecao por numero.
+# CLASSIC continua existindo, mas so como fallback/debug (ver
+# FORCE_CLASSIC_DEBUG abaixo) -- nunca mais escolhido automaticamente por
+# level_id. IMPORTANTE (mantido da Etapa 8): isto migra so APRESENTACAO
+# (camera, docks, fila 3D, efeitos, HUD) -- NUNCA conteudo (veiculos,
+# capacidades, vagas, dificuldade, board ou regras), que continuam vindo do
+# proprio level_XXX.json/LevelGenerator de cada fase, sem nenhuma alteracao
+# aqui.
 enum PresentationProfile { CLASSIC, POLISHED }
+# Fase de QA/stress-test (ver scripts/game/polish_test_launcher.gd) -- usada
+# hoje so pelo gate literal do "+10"/contador DEV (ver _play_boarding_events
+# mais abaixo) e por HUDController.show_polish_test_coin_counter, NUNCA para
+# decidir apresentacao (isso agora e generico -- ver _resolve_presentation_profile).
 const POLISH_TEST_LEVEL_ID := 950
-const POLISHED_LEVEL_IDS: Array[int] = [1, 2, 3, POLISH_TEST_LEVEL_ID]
+# ETAPA 9 (ticket secao 27): trava simples de regressao/debug -- nunca
+# exposta ao jogador, sem UI. true forca toda fase de volta a CLASSIC
+# (comportamento pre-Etapa-8), util para comparar visualmente durante o
+# desenvolvimento sem precisar reverter codigo.
+const FORCE_CLASSIC_DEBUG := false
 
 # --- ETAPA 8B: densidade de conteudo (ContentDensity) ---
 # Complementa PresentationProfile: POLISHED decide COMO uma fase e
@@ -231,8 +242,16 @@ var _camera_shake_tween: Tween
 # HUDController.show_polish_test_coin_counter). Fora da fase 950 nunca e
 # incrementado nem lido.
 var _polish_local_coin_balance: int = 0
-func _resolve_presentation_profile(level_id: int) -> PresentationProfile:
-	return PresentationProfile.POLISHED if POLISHED_LEVEL_IDS.has(level_id) else PresentationProfile.CLASSIC
+# ETAPA 9 (ticket secao 4/27): POLISHED e o padrao para toda fase (JSON ou
+# procedural, real ou QA) -- CLASSIC so acontece com FORCE_CLASSIC_DEBUG
+# ligado. Recebe level_id so pra manter a assinatura/local de chamada
+# estaveis (chamada em _load_level_number logo apos state existir); NAO usa
+# mais o numero pra decidir nada -- ver ticket secao 5 ("nao usar level_id
+# para direcao de arte").
+func _resolve_presentation_profile(_level_id: int) -> PresentationProfile:
+	if FORCE_CLASSIC_DEBUG:
+		return PresentationProfile.CLASSIC
+	return PresentationProfile.POLISHED
 
 # ETAPA 8B (ticket secao 2): classificacao de densidade visual, baseada no
 # numero de veiculos da fase -- nao altera dificuldade/conteudo, so decide
