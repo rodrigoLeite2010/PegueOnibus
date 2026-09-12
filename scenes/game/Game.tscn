@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3 uid="uid://pega_passageiro_game"]
+[gd_scene load_steps=7 format=3 uid="uid://pega_passageiro_game"]
 
 [ext_resource type="Script" path="res://scripts/game/game_controller.gd" id="1_game"]
 [ext_resource type="PackedScene" path="res://scenes/game/Board.tscn" id="2_board"]
 [ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="3_hud"]
 [ext_resource type="PackedScene" path="res://scenes/environment/GameEnvironment.tscn" id="4_environment"]
+[ext_resource type="Script" path="res://scripts/game/boarding_area_controller.gd" id="5_boarding_area"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -33,6 +34,7 @@ shadow_blur = 2.2
 [node name="Passengers" type="Node3D" parent="."]
 
 [node name="BoardingArea" type="Node3D" parent="."]
+script = ExtResource("5_boarding_area")
 
 [node name="VFX" type="Node3D" parent="."]
 
