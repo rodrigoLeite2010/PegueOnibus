@@ -20,12 +20,14 @@ const COLOR_MAP := {
 # exatamente no bounce padrao de sempre.
 var is_polish: bool = false
 
-# ETAPA 10A (prova de conceito): quando true, _build() usa o novo modelo 3D
-# (passenger_01.glb, via o wrapper Passenger3D) em vez dos primitivos
-# proceduais abaixo -- ver _build_glb_visual()/_build_procedural_visual().
-# So fica true quando GameController.FORCE_GLB_PASSENGER_VISUAL_DEBUG estiver
-# ligado (ver ENTREGA_ETAPA_10A.md, secao de performance -- o GLB tem ~1.96M
-# triangulos por instancia e fica desligado por padrao mesmo na fase 950).
+# ETAPA 10A (prova de conceito) / 10A.1 (modelo animado): quando true,
+# _build() usa o modelo 3D (passenger_01.glb, via o wrapper Passenger3D) em
+# vez dos primitivos proceduais abaixo -- ver
+# _build_glb_visual()/_build_procedural_visual(). So fica true quando
+# GameController.FORCE_GLB_PASSENGER_VISUAL_DEBUG estiver ligado. O GLB atual
+# (Etapa 10A.1) foi retopologizado para ~10 mil triangulos e ganhou
+# Armature/Skeleton3D/AnimationPlayer (preset_biped_idle/walk/run) -- ver
+# ENTREGA_ETAPA_10A_1.md para numeros de FPS antes de ativar em producao.
 # Nunca influencia color_id/logica -- so a representacao grafica do corpo.
 var use_glb_visual: bool = false
 
@@ -51,6 +53,11 @@ var _walk_tween: Tween
 # bug relatado de passageiros sobrepondo. _kill_move() garante que so o
 # tween mais recente continua vivo.
 var _move_tween: Tween
+
+# ETAPA 10A.1: referencia ao wrapper instanciado por _build_glb_visual(),
+# usada para tocar as animacoes idle/walk/run do novo passenger_01.glb (ver
+# scripts/game/passenger_3d.gd). Fica null quando use_glb_visual == false.
+var _glb_visual: Passenger3D
 
 func _ready() -> void:
 	_build()
@@ -82,6 +89,7 @@ func walk_to_and_board(target: Vector3) -> void:
 
 	_face_towards(middle)
 	_start_walk_cycle(0.0425)
+	_play_glb_run_if_needed()
 
 	var tween := create_tween()
 	_move_tween = tween
@@ -180,6 +188,7 @@ func walk_to_and_board_polished(target: Vector3) -> void:
 	# Passada mais lenta que a versao rapida (0.0425s por quarto de passada),
 	# coerente com a corrida mais vistosa pedida aqui.
 	_start_walk_cycle(0.11)
+	_play_glb_run_if_needed()
 	var bounce_cycles: float = clampf(run_duration * 6.0, 2.0, 6.0)
 
 	var run_tween := create_tween()
@@ -307,6 +316,7 @@ func _build() -> void:
 
 	_leg_pivots.clear()
 	_arm_pivots.clear()
+	_glb_visual = null
 	if use_glb_visual:
 		_build_glb_visual()
 	else:
@@ -316,7 +326,16 @@ func _build() -> void:
 	# 950 (item 2 da Etapa 4) isto vira o idle "polido" abaixo -- amplitude
 	# maior e fase inicial variada por boneco; toda fase normal continua com
 	# este bounce padrao, inalterado.
-	if is_polish:
+	# ETAPA 10A.1: quando o GLB tem animacoes proprias (Skeleton3D +
+	# AnimationPlayer), o idle esqueletal ja foi iniciado em
+	# _build_glb_visual() -- NUNCA somar o bounce procedural por cima (faria o
+	# corpo inteiro subir/descer alem da respiracao/balanco ja animados no
+	# rig, dando impressao de "flutuar"/afundar os pes). Se o GLB nao tiver
+	# animacoes (fallback, caso um modelo futuro venha sem rig de novo), cai
+	# de volta exatamente no comportamento original desta funcao.
+	if use_glb_visual and _glb_visual != null and _glb_visual.has_animations():
+		pass
+	elif is_polish:
 		start_polish_idle()
 	else:
 		var idle := create_tween()
@@ -330,17 +349,25 @@ func _build() -> void:
 # ETAPA 10A (prova de conceito): substitui os primitivos proceduais pelo
 # novo modelo 3D (passenger_01.glb), sempre atraves do wrapper Passenger3D
 # (nunca o GLB diretamente -- ver scripts/game/passenger_3d.gd). _leg_pivots/
-# _arm_pivots ficam vazios de proposito: a auditoria da Etapa 10A confirmou
-# que o GLB nao tem Skeleton3D/AnimationPlayer, entao _start_walk_cycle() so
-# encontra menos de 2 pivots e nao faz nada (guard clause ja existente, sem
-# mudanca necessaria ali) -- o Node3D inteiro (este PassengerController)
-# continua sendo movimentado por step_to()/walk_to_and_board*() exatamente
-# como antes. Cor NAO e reaplicada ainda (Etapa 10B fara isso); todos ficam
+# _arm_pivots ficam vazios de proposito: mesmo agora que o GLB (Etapa 10A.1)
+# tem Skeleton3D/AnimationPlayer, essa animacao e tocada dentro do proprio
+# Passenger3D (ver play_idle/play_walk/play_run), NUNCA via _leg_pivots/
+# _arm_pivots -- entao _start_walk_cycle() continua encontrando menos de 2
+# pivots e nao faz nada (guard clause ja existente, sem mudanca necessaria
+# ali) -- o Node3D inteiro (este PassengerController) continua sendo
+# movimentado por step_to()/walk_to_and_board*() exatamente como antes, sem
+# root motion. Cor NAO e reaplicada ainda (Etapa 10B fara isso); todos ficam
 # com o material original do GLB por enquanto (Passo 6 do pedido da Etapa
 # 10A: prova visual/estrutural, nao recolorir ainda).
 func _build_glb_visual() -> void:
-	var visual: Node3D = PASSENGER_3D_SCENE.instantiate() as Node3D
+	var visual: Passenger3D = PASSENGER_3D_SCENE.instantiate() as Passenger3D
 	_body_root.add_child(visual)
+	_glb_visual = visual
+	# Passo 3: comeca esperando (idle), com um deslocamento aleatorio dentro
+	# do clipe para que uma fila inteira de passageiros GLB nao fique
+	# perfeitamente sincronizada (cada um "ligeiramente independente").
+	if _glb_visual.has_animations():
+		_glb_visual.play_idle(randf() * 10.0)
 
 func _build_procedural_visual() -> void:
 	var shirt_color: Color = COLOR_MAP.get(color_id, Color.WHITE)
@@ -477,6 +504,22 @@ func _kill_move() -> void:
 		_move_tween.kill()
 	_move_tween = null
 
+# ETAPA 10A.1 (Passos 3/4/5): pontes finas entre os Tweens de movimento
+# (inalterados) e a animacao esqueletal do GLB, quando existir. Sempre
+# no-op quando use_glb_visual == false ou o modelo atual nao tem
+# Skeleton3D/AnimationPlayer (ver Passenger3D.has_animations()).
+func _play_glb_idle_if_needed() -> void:
+	if use_glb_visual and _glb_visual != null and _glb_visual.has_animations():
+		_glb_visual.play_idle(randf() * 10.0)
+
+func _play_glb_walk_if_needed() -> void:
+	if use_glb_visual and _glb_visual != null and _glb_visual.has_animations():
+		_glb_visual.play_walk()
+
+func _play_glb_run_if_needed() -> void:
+	if use_glb_visual and _glb_visual != null and _glb_visual.has_animations():
+		_glb_visual.play_run()
+
 # Passo curto da fila avancando (FASE C): reaproveita o ciclo de caminhada
 # por um instante, sem repetir toda a coreografia de embarque completo.
 func step_to(target: Vector3) -> void:
@@ -491,9 +534,11 @@ func step_to(target: Vector3) -> void:
 	_kill_move()
 	if position.distance_to(target) < 0.01:
 		_stop_walk_cycle()
+		_play_glb_idle_if_needed()
 		return
 	_face_towards(target)
 	_start_walk_cycle()
+	_play_glb_walk_if_needed()
 	var tween := create_tween()
 	_move_tween = tween
 	tween.set_trans(Tween.TRANS_SINE)
@@ -501,6 +546,7 @@ func step_to(target: Vector3) -> void:
 	tween.tween_property(self, "position", target, 0.26)
 	await tween.finished
 	_stop_walk_cycle()
+	_play_glb_idle_if_needed()
 
 # Usado quando um novo boneco aparece no fim da fila 3D visivel.
 func pop_in() -> void:

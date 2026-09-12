@@ -2,7 +2,7 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://beu6ntd3xve5b"
+uid="uid://dfkpkgf7vsh24"
 path.s3tc="res://.godot/imported/passenger_01_cartoon_character_3d_model_basecolor.jpg-411600b27af4205238b6352605e568f1.s3tc.ctex"
 path.etc2="res://.godot/imported/passenger_01_cartoon_character_3d_model_basecolor.jpg-411600b27af4205238b6352605e568f1.etc2.ctex"
 metadata={
@@ -10,7 +10,7 @@ metadata={
 "vram_texture": true
 }
 generator_parameters={
-"md5": "6b7eef7b8d1a958e3a3f86fa95292f27"
+"md5": "110913cb234d7b5a050c050ca19e2d31"
 }
 
 [deps]

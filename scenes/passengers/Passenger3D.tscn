@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://passenger_3d_wrapper"]
 
 [ext_resource type="Script" path="res://scripts/game/passenger_3d.gd" id="1_script"]
-[ext_resource type="PackedScene" uid="uid://ddgmyr0yejf17" path="res://assets/characters/passengers/passenger_01.glb" id="2_glb"]
+[ext_resource type="PackedScene" uid="uid://cpc21nktxslve" path="res://assets/characters/passengers/passenger_01.glb" id="2_glb"]
 
 [node name="Passenger3D" type="Node3D"]
 script = ExtResource("1_script")
