@@ -67,7 +67,8 @@ func _ready() -> void:
 
 # ETAPA 8: `polished` vem de GameController.is_polished (presentation_profile),
 # nao mais de uma comparacao local com state.level_id -- assim o estilo de HUD
-# "polido" tambem liga nas fases 1-3, nao so na 950. POLISH_TEST_LEVEL_ID
+# "polido" liga em toda fase real (ETAPA 9 tornou POLISHED o padrao geral,
+# nao mais so nas fases 1-3/950 registradas manualmente). POLISH_TEST_LEVEL_ID
 # continua existindo (const abaixo) so para o que e EXCLUSIVO da PolishTest:
 # a badge DEV (show_polish_test_coin_counter/_build_polish_coin_badge).
 func update_state(state: GameState, text: String = "", progress_text: String = "", stars: int = -1, polished: bool = false) -> void:

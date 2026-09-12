@@ -100,10 +100,13 @@ func walk_to_and_board(target: Vector3) -> void:
 	_move_tween = null
 	queue_free()
 
-# ETAPA 4 (Polish Test, fase 950 exclusivamente): variante "polida" de
-# walk_to_and_board(), usada SOMENTE quando GameController detecta
-# state.level_id == POLISH_TEST_LEVEL_ID (ver GameController.
-# _run_cascaded_boarding). Mais lenta/vistosa que a versao rapida acima
+# ETAPA 4 (originalmente Polish Test/fase 950; ETAPA 9 tornou POLISHED o
+# padrao de TODA fase real -- ver GameController._resolve_presentation_
+# profile): variante "polida" de walk_to_and_board(), usada em qualquer fase
+# com presentation_profile POLISHED (chamada incondicional a partir de
+# GameController._run_cascaded_boarding a cada PassengerBoarded, nao mais
+# restrita a state.level_id == 950). Mais lenta/vistosa que a versao rapida
+# acima
 # (duracao ~0.35-0.65s dependendo da distancia, vs os ~0.13s fixos dela):
 # trajetoria com arco (Bezier quadratico amostrado por tween_method, sem
 # Curve3D novo), bounce vertical de corrida e leve inclinacao pra frente
