@@ -148,6 +148,13 @@ const POLISH_BOARDING_AREA_DEPTH := 5.5
 @onready var directional_light: DirectionalLight3D = $DirectionalLight3D
 @onready var hud: HUDController = $HUD
 
+# ETAPA 7 (refatoracao segura): instanciado em _ready(), nunca editado na
+# cena .tscn -- ver PolishEffectsController e _ready() abaixo. Reune os
+# efeitos visuais puros que antes eram metodos privados deste script
+# (particulas procedurais, popups, feedback de vaga liberada); o
+# comportamento e byte-a-byte o mesmo, so mudou de arquivo.
+var _polish_effects: PolishEffectsController
+
 # ETAPA 6 (PolishTest, fase 950 exclusivamente): snapshot do Environment/luz
 # ORIGINAIS (fases normais), tirado uma unica vez em _ready() antes de
 # qualquer fase carregar. _apply_polish_environment()/
@@ -204,23 +211,18 @@ var _camera_shake_tween: Tween
 # temporario desta sessao de teste (+10 por veiculo completado, itens 8-9 do
 # pedido) -- NUNCA passa por Wallet.add_coins nem e persistido; reseta a
 # cada _load_level_number(). Existe so para o feedback visual "+10" e o
-# contador separado no HUD (ver _spawn_polish_coin_popup e
+# contador separado no HUD (ver PolishEffectsController.coin_popup e
 # HUDController.show_polish_test_coin_counter). Fora da fase 950 nunca e
 # incrementado nem lido.
 var _polish_local_coin_balance: int = 0
-# ETAPA 5, item 1: um onibus de 40 lugares dispara ate 40 embarques em
-# cascata numa janela curta -- tocar "passenger_board" a cada um deles
-# soaria como ruido sobreposto. _play_polish_board_sfx_throttled() so deixa
-# passar um som novo se ja passou esse intervalo minimo desde o ultimo
-# (o feedback visual/particula continua em TODOS os embarques, so o som e
-# limitado em frequencia). So usado no caminho da fase 950.
-var _last_polish_board_sfx_ms: int = -1000000
-const POLISH_BOARD_SFX_MIN_INTERVAL_MS := 45
-
 func _ready() -> void:
 	hud.restart_requested.connect(restart_level)
 	hud.continue_requested.connect(_on_continue_requested)
 	hud.hint_requested.connect(_on_hint_requested)
+	# ETAPA 7: ver comentario do var _polish_effects acima.
+	_polish_effects = PolishEffectsController.new()
+	add_child(_polish_effects)
+	_polish_effects.setup(vfx_root, board)
 	# ETAPA 6: guarda o visual ORIGINAL antes de qualquer fase carregar (ver
 	# comentario dos vars _default_* acima).
 	if world_environment != null and world_environment.environment != null:
@@ -519,7 +521,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 		vehicle_node.animate_valid_tap_polished()
 		# ETAPA 5, item 3: particula discreta na base do veiculo ao confirmar
 		# o toque -- so na fase 950.
-		_spawn_tap_spark(vehicle_node.global_position)
+		_polish_effects.tap_spark(vehicle_node.global_position)
 	else:
 		vehicle_node.animate_valid_tap()
 	_camera_pulse_valid_tap()
@@ -598,7 +600,7 @@ func _process_vehicle_tap(vehicle_id: String) -> void:
 		AudioManager.play_sfx("win")
 		var coins_awarded: int = Wallet.award_win_bonus()
 		hud.play_coin_reward(coins_awarded)
-		_spawn_win_particles()
+		_polish_effects.win_particles()
 		_camera_zoom_out_for_win()
 		last_stars_earned = _stars_for_run()
 		ProgressService.report_level_result(current_level_number, last_stars_earned)
@@ -1427,7 +1429,7 @@ func _play_boarding_events(events: Array, reserved_dolls: Array[PassengerControl
 			await passenger.walk_to_and_board(target_vehicle.get_boarding_point())
 			target_vehicle.animate_boarding_bounce()
 			AudioManager.play_sfx("passenger_board")
-			_spawn_boarding_spark(target_vehicle.get_boarding_point(), color_id)
+			_polish_effects.boarding_spark(target_vehicle.get_boarding_point(), color_id)
 			# Contador regressivo no proprio carro: sempre o numero real do
 			# evento (capacity - occupied_seats), nunca reconsultado depois --
 			# assim continua certo mesmo com varios veiculos animando juntos.
@@ -1445,7 +1447,7 @@ func _play_boarding_events(events: Array, reserved_dolls: Array[PassengerControl
 			if completed_node != null:
 				AudioManager.play_sfx("vehicle_complete")
 				AudioManager.vibrate(30)
-				_spawn_vehicle_complete_burst(completed_node.global_position, completed_node.color_id)
+				_polish_effects.vehicle_complete_burst(completed_node.global_position, completed_node.color_id)
 				completed_node.set_waiting_slot_mode(false)
 				AudioManager.play_sfx("car_driving")
 				await completed_node.drive_away_from_pickup(float(state.board_cols) * CELL_SIZE)
@@ -1515,18 +1517,18 @@ func _play_boarding_events_polished(events: Array, reserved_dolls: Array[Passeng
 				_set_slot_label_text(freed_marker, "")
 				# ETAPA 5, item 7: "+" some com pop, piso/borda pulsa e uma
 				# particula verde curta marca "esta vaga acabou de abrir".
-				_play_slot_freed_feedback_polished(freed_marker)
+				_polish_effects.slot_freed_feedback_polished(freed_marker)
 			_vehicle_slot_markers.erase(completed_vehicle_id)
 			_pending_polish_boardings.erase(completed_vehicle_id)
 			if completed_node != null:
 				AudioManager.play_sfx("vehicle_complete")
 				AudioManager.vibrate(30)
-				_spawn_vehicle_complete_burst(completed_node.global_position, completed_node.color_id)
+				_polish_effects.vehicle_complete_burst(completed_node.global_position, completed_node.color_id)
 				# ETAPA 5, itens 8-9: recompensa visual "+10" por veiculo
 				# completado, EXCLUSIVA da PolishTest -- saldo local, nunca
 				# Wallet/save real (ver _polish_local_coin_balance).
 				_polish_local_coin_balance += 10
-				_spawn_polish_coin_popup(completed_node.global_position)
+				_polish_effects.coin_popup(completed_node.global_position)
 				hud.show_polish_test_coin_counter(_polish_local_coin_balance)
 				# ETAPA 4B (SINCRONIZACAO DO VEICULO, pedido explicito): pequena
 				# pausa (~0.10s) + micro reacao de "lotado" ANTES de sair, pra
@@ -1561,9 +1563,9 @@ func _run_cascaded_boarding(passenger: PassengerController, target_vehicle: Vehi
 		await passenger.walk_to_and_board_polished(target_vehicle.get_boarding_point())
 		if is_instance_valid(target_vehicle):
 			target_vehicle.animate_boarding_bounce()
-		_play_polish_board_sfx_throttled()
+		_polish_effects.play_board_sfx_throttled()
 		if is_instance_valid(target_vehicle):
-			_spawn_boarding_spark(target_vehicle.get_boarding_point(), color_id)
+			_polish_effects.boarding_spark(target_vehicle.get_boarding_point(), color_id)
 		if boarding_marker != null:
 			_set_slot_label_text_pop_bump(boarding_marker, str(remaining))
 	_pending_polish_boardings[vehicle_id] = maxi(int(_pending_polish_boardings.get(vehicle_id, 1)) - 1, 0)
@@ -1810,176 +1812,6 @@ func _has_event(events: Array, event_type: String) -> bool:
 # VFX leve de embarque (etapa 10 - polimento): poucas particulas coloridas
 # no ponto de embarque, sem asset novo (mesma tecnica procedural do
 # confete de vitoria, so que menor e na cor do passageiro).
-func _spawn_boarding_spark(spawn_position: Vector3, color_id: String) -> void:
-	var color: Color = VehicleController.COLOR_MAP.get(color_id, Color.WHITE)
-	for i: int in range(8):
-		var piece := MeshInstance3D.new()
-		var mesh := BoxMesh.new()
-		mesh.size = Vector3(0.045, 0.045, 0.045)
-		piece.mesh = mesh
-		piece.position = spawn_position + Vector3(0.0, 0.15, 0.0)
-		var material := StandardMaterial3D.new()
-		material.albedo_color = color
-		piece.material_override = material
-		vfx_root.add_child(piece)
-		var direction := Vector3(randf_range(-1.0, 1.0), randf_range(0.6, 1.2), randf_range(-1.0, 1.0))
-		var tween := create_tween()
-		tween.set_trans(Tween.TRANS_QUAD)
-		tween.set_ease(Tween.EASE_OUT)
-		tween.parallel().tween_property(piece, "position", piece.position + direction * 0.55, 0.28)
-		tween.parallel().tween_property(piece, "scale", Vector3.ZERO, 0.28)
-		tween.tween_callback(piece.queue_free)
-
-# ETAPA 5, item 3 (PolishTest exclusivamente): particula discreta na base do
-# veiculo ao confirmar um toque valido -- poucos elementos (6), sobe pouco e
-# some rapido (~0.22s), reforca o toque sem competir com o proprio "pop" do
-# carro (animate_valid_tap_polished, que e so escala).
-func _spawn_tap_spark(spawn_position: Vector3) -> void:
-	for i: int in range(6):
-		var piece := MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radius = 0.035
-		mesh.height = 0.035
-		piece.mesh = mesh
-		piece.position = spawn_position + Vector3(0.0, 0.05, 0.0)
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(1.0, 1.0, 1.0, 0.9)
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		piece.material_override = material
-		vfx_root.add_child(piece)
-		var angle: float = (TAU / 6.0) * float(i)
-		var direction := Vector3(cos(angle), 0.5, sin(angle))
-		var tween := create_tween()
-		tween.set_trans(Tween.TRANS_QUAD)
-		tween.set_ease(Tween.EASE_OUT)
-		tween.parallel().tween_property(piece, "position", piece.position + direction * 0.30, 0.22)
-		tween.parallel().tween_property(piece, "scale", Vector3.ZERO, 0.22)
-		tween.tween_callback(piece.queue_free)
-
-# ETAPA 5, item 1 (PolishTest exclusivamente): ver comentario da variavel
-# _last_polish_board_sfx_ms/POLISH_BOARD_SFX_MIN_INTERVAL_MS acima -- limita
-# a FREQUENCIA do som de embarque durante a cascata (nunca o efeito visual),
-# pra um onibus de 40 lugares nao soar como 40 sons colados.
-func _play_polish_board_sfx_throttled() -> void:
-	var now_ms: int = Time.get_ticks_msec()
-	if now_ms - _last_polish_board_sfx_ms < POLISH_BOARD_SFX_MIN_INTERVAL_MS:
-		return
-	_last_polish_board_sfx_ms = now_ms
-	AudioManager.play_sfx("passenger_board")
-
-# ETAPA 5, item 7 (PolishTest exclusivamente): feedback rapido (~0.3s) no
-# instante em que uma vaga fica livre -- o "+" aparece com pop (em vez de
-# so trocar "visible" instantaneo), o piso da vaga pulsa (clareia e volta) e
-# uma pequena particula verde sobe e some. Ensina visualmente "uma vaga
-# acabou de abrir". Reaproveita os nos "SlotPlus"/"Pad" ja criados em
-# _setup_boarding_area_polish(); nao cria nenhum no novo na vaga.
-func _play_slot_freed_feedback_polished(marker: Marker3D) -> void:
-	var plus_label: Label3D = marker.get_node_or_null("SlotPlus") as Label3D
-	if plus_label != null:
-		plus_label.scale = Vector3.ZERO
-		var pop_tween := create_tween()
-		pop_tween.set_trans(Tween.TRANS_BACK)
-		pop_tween.set_ease(Tween.EASE_OUT)
-		pop_tween.tween_property(plus_label, "scale", Vector3.ONE * 1.2, 0.14)
-		pop_tween.tween_property(plus_label, "scale", Vector3.ONE, 0.10)
-	var pad: MeshInstance3D = marker.get_node_or_null("Pad") as MeshInstance3D
-	if pad != null:
-		var pad_material: StandardMaterial3D = pad.material_override as StandardMaterial3D
-		if pad_material != null:
-			var base_color: Color = pad_material.albedo_color
-			var pulse_tween := create_tween()
-			pulse_tween.tween_property(pad_material, "albedo_color", Color("#3f8f5c"), 0.10)
-			pulse_tween.tween_property(pad_material, "albedo_color", base_color, 0.18)
-	_spawn_slot_freed_spark(marker.global_position)
-
-func _spawn_slot_freed_spark(spawn_position: Vector3) -> void:
-	for i: int in range(6):
-		var piece := MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radius = 0.04
-		mesh.height = 0.04
-		piece.mesh = mesh
-		piece.position = spawn_position + Vector3(0.0, 0.05, 0.0)
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color("#63ef91")
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		piece.material_override = material
-		vfx_root.add_child(piece)
-		var direction := Vector3(randf_range(-0.6, 0.6), randf_range(0.8, 1.3), randf_range(-0.6, 0.6))
-		var tween := create_tween()
-		tween.set_trans(Tween.TRANS_QUAD)
-		tween.set_ease(Tween.EASE_OUT)
-		tween.parallel().tween_property(piece, "position", piece.position + direction * 0.4, 0.3)
-		tween.parallel().tween_property(piece, "scale", Vector3.ZERO, 0.3)
-		tween.tween_callback(piece.queue_free)
-
-# ETAPA 5, itens 8-9 (PolishTest exclusivamente): "+10" que aparece com pop,
-# sobe levemente e desaparece (~0.75s), perto do veiculo/vaga que acabou de
-# completar. Nunca toca em Wallet -- ver _polish_local_coin_balance.
-func _spawn_polish_coin_popup(spawn_position: Vector3) -> void:
-	var label := Label3D.new()
-	label.text = "+10"
-	label.font_size = 48
-	label.outline_size = 12
-	label.modulate = Color("#ffd233")
-	label.outline_modulate = Color(0.35, 0.22, 0.0, 0.9)
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.no_depth_test = true
-	label.position = spawn_position + Vector3(0.0, 0.9, 0.0)
-	vfx_root.add_child(label)
-	label.scale = Vector3.ZERO
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_BACK)
-	tween.set_ease(Tween.EASE_OUT)
-	tween.tween_property(label, "scale", Vector3.ONE, 0.12)
-	tween.set_parallel(true)
-	tween.tween_property(label, "position", label.position + Vector3(0.0, 0.55, 0.0), 0.75).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_property(label, "modulate:a", 0.0, 0.35).set_delay(0.40)
-	tween.chain().tween_callback(label.queue_free)
-
-func _spawn_win_particles() -> void:
-	AudioManager.vibrate(90)
-	var center: Vector3 = board.get_board_center()
-	for i: int in range(30):
-		var piece := MeshInstance3D.new()
-		var mesh := BoxMesh.new()
-		mesh.size = Vector3(0.09, 0.035, 0.15)
-		piece.mesh = mesh
-		piece.position = center + Vector3(randf_range(-1.4, 1.4), 1.1, randf_range(-0.9, 0.9))
-		piece.rotation_degrees = Vector3(randf_range(0.0, 180.0), randf_range(0.0, 180.0), randf_range(0.0, 180.0))
-		var material := StandardMaterial3D.new()
-		material.albedo_color = [Color("#ff4b4b"), Color("#35de45"), Color("#ffd236"), Color("#2f91ff"), Color("#ff43c8"), Color("#ff7b20")][i % 6]
-		piece.material_override = material
-		vfx_root.add_child(piece)
-		var tween := create_tween()
-		tween.set_trans(Tween.TRANS_QUAD)
-		tween.set_ease(Tween.EASE_OUT)
-		tween.parallel().tween_property(piece, "position", piece.position + Vector3(randf_range(-2.4, 2.4), randf_range(1.4, 2.6), randf_range(-2.4, 2.4)), 0.45)
-		tween.tween_property(piece, "position:y", 0.1, 0.5)
-		tween.tween_callback(piece.queue_free)
-
-func _spawn_vehicle_complete_burst(spawn_position: Vector3, color_id: String) -> void:
-	var color: Color = VehicleController.COLOR_MAP.get(color_id, Color.WHITE)
-	for i: int in range(14):
-		var piece := MeshInstance3D.new()
-		var mesh := SphereMesh.new()
-		mesh.radius = 0.05
-		mesh.height = 0.05
-		piece.mesh = mesh
-		piece.position = spawn_position + Vector3(0.0, 0.2, 0.0)
-		var material := StandardMaterial3D.new()
-		material.albedo_color = color
-		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		piece.material_override = material
-		vfx_root.add_child(piece)
-		var direction := Vector3(randf_range(-1.0, 1.0), randf_range(0.7, 1.4), randf_range(-1.0, 1.0))
-		var tween := create_tween()
-		tween.set_trans(Tween.TRANS_QUAD)
-		tween.set_ease(Tween.EASE_OUT)
-		tween.parallel().tween_property(piece, "position", piece.position + direction * 0.75, 0.34)
-		tween.parallel().tween_property(piece, "scale", Vector3.ZERO, 0.34)
-		tween.tween_callback(piece.queue_free)
-
 func _setup_camera() -> void:
 	var center: Vector3 = board.get_board_center()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
