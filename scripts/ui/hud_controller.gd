@@ -37,6 +37,27 @@ var _settings_popup: PanelContainer
 var _queue_chips: Array[PassengerChip] = []
 var _queue_more_label: Label
 
+# ETAPA 5, itens 8-9 (PolishTest, fase 950 exclusivamente): contador de
+# moedas SEPARADO do contador real (_coin_badge/_coin_label acima). Nunca
+# le nem escreve em Wallet -- so mostra o saldo local e temporario que o
+# GameController mantem so durante a PolishTest. Criado sob demanda (na
+# primeira chamada de show_polish_test_coin_counter), entao nunca aparece
+# em nenhuma fase normal.
+var _polish_coin_badge: PanelContainer
+var _polish_coin_label: Label
+
+# ETAPA 6 (itens 9-12, PolishTest/fase 950 EXCLUSIVAMENTE): mesmo id usado
+# em GameController.POLISH_TEST_LEVEL_ID -- nao pode ser importado direto
+# (GameController nao e global_class), entao repetimos a constante aqui.
+# Toda fase normal continua com update_state()/show_message() inalterados;
+# ver _apply_polish_hud_style() e _set_message().
+const POLISH_TEST_LEVEL_ID := 950
+
+var _polish_hud_applied: bool = false
+var _toast: PanelContainer
+var _toast_label: Label
+var _toast_tween: Tween
+
 func _ready() -> void:
 	_restart.pressed.connect(func() -> void: restart_requested.emit())
 	_pause.pressed.connect(_on_pause_pressed)
@@ -45,13 +66,84 @@ func _ready() -> void:
 	Wallet.coins_changed.connect(_on_coins_changed)
 
 func update_state(state: GameState, text: String = "", progress_text: String = "", stars: int = -1) -> void:
+	if state.level_id == POLISH_TEST_LEVEL_ID and not _polish_hud_applied:
+		_apply_polish_hud_style()
+		_polish_hud_applied = true
 	_title.text = "Fase %s" % state.level_id
 	if progress_text != "":
 		_title.tooltip_text = "Progresso %s" % progress_text
 	_moves.text = "%s mov." % state.moves
-	_message.text = text
+	_set_message(text)
 	# Passageiros agora sao mostrados como pessoas 3D junto das vagas.
 	_update_modal(state, stars)
+
+# ETAPA 6 (itens 9, 10, 11 -- PolishTest/fase 950 apenas, chamada UMA vez
+# por update_state()). O topo ja fica como "[reiniciar] FASE 950 [pause]"
+# sem nenhuma mudanca (Restart/Title/Pause ja ficam nessa ordem no
+# HUD.tscn); os botoes ja usam StyleBoxFlat com cantos arredondados e
+# sombra (BoosterAccentStyle etc.) -- nada a fazer ali. O que muda:
+func _apply_polish_hud_style() -> void:
+	# Item 9: "0 mov." nao ajuda o jogador a entender o desafio -- fora da
+	# fase 950, o label continua exatamente como sempre.
+	_moves.visible = false
+
+	# Item 11: a barra de mensagem fixa ocupava uma faixa vertical grande;
+	# escondemos o painel inteiro (BottomPanel) e passamos a usar o toast
+	# flutuante em _show_polish_toast() pra qualquer show_message() futuro.
+	if is_instance_valid(_message):
+		_message.visible = false
+		var bottom_panel: Control = _message.get_parent() as Control
+		if bottom_panel != null and bottom_panel.name == "BottomPanel":
+			bottom_panel.visible = false
+
+	# Item 10: Dica ~20% menor (170x82 -> 136x65.6), mesma funcao/sinal.
+	if is_instance_valid(_hint):
+		_hint.custom_minimum_size *= 0.8
+
+# ETAPA 6 (item 11): toast discreto e temporario -- aparece, fica ~1s,
+# desaparece. Ancorado por FRACAO da tela (nao pixel fixo) pra funcionar
+# igual em 540x960 e 720x1280 (item 14); grow em ambas direcoes a partir do
+# ponto de ancoragem faz o PanelContainer se autocentralizar/autoajustar ao
+# texto sem nenhuma conta manual de largura.
+func _show_polish_toast(text: String) -> void:
+	if _toast == null:
+		_toast = PanelContainer.new()
+		_toast.name = "PolishToast"
+		_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_toast.anchor_left = 0.5
+		_toast.anchor_right = 0.5
+		_toast.anchor_top = 0.86
+		_toast.anchor_bottom = 0.86
+		_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_toast.grow_vertical = Control.GROW_DIRECTION_BOTH
+		_toast.add_theme_stylebox_override("panel", _polish_toast_style())
+		_toast.modulate.a = 0.0
+		_toast_label = Label.new()
+		_toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_toast_label.add_theme_font_size_override("font_size", 16)
+		_toast_label.add_theme_color_override("font_color", Color("#f4f1e8"))
+		_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_toast.add_child(_toast_label)
+		_root.add_child(_toast)
+
+	_toast_label.text = text
+	if _toast_tween != null and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast.modulate.a = 0.0
+	_toast_tween = create_tween()
+	_toast_tween.tween_property(_toast, "modulate:a", 1.0, 0.12)
+	_toast_tween.tween_interval(1.0)
+	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.25)
+
+func _polish_toast_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.09, 0.14, 0.72)
+	style.set_corner_radius_all(14)
+	style.set_content_margin(SIDE_LEFT, 16)
+	style.set_content_margin(SIDE_RIGHT, 16)
+	style.set_content_margin(SIDE_TOP, 8)
+	style.set_content_margin(SIDE_BOTTOM, 8)
+	return style
 
 func _on_pause_pressed() -> void:
 	if _settings_popup != null:
@@ -60,7 +152,18 @@ func _on_pause_pressed() -> void:
 	_open_settings_popup()
 
 func show_message(text: String) -> void:
-	_message.text = text
+	_set_message(text)
+
+# ETAPA 6 (item 11): unico ponto de decisao entre a barra de mensagem fixa
+# de sempre (fases normais, comportamento 100% inalterado) e o toast
+# flutuante e temporario pedido so pra PolishTest (_show_polish_toast). Um
+# texto vazio nunca abre um toast (nada pra mostrar).
+func _set_message(text: String) -> void:
+	if _polish_hud_applied:
+		if text != "":
+			_show_polish_toast(text)
+	else:
+		_message.text = text
 
 # Reaproveita os PassengerChip em vez de destruir/recriar a cada
 # atualizacao (etapa 10 - performance): o toque num veiculo dispara varias
@@ -305,6 +408,74 @@ func _bump_coin_badge() -> void:
 	var bump := create_tween()
 	bump.tween_property(_coin_badge, "scale", Vector2(1.18, 1.18), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	bump.tween_property(_coin_badge, "scale", Vector2.ONE, 0.14)
+
+# --- Moedas de teste da PolishTest (ETAPA 5, itens 8-9) ---
+# Badge visual separado, exclusivo da fase 950: mostra "+10 por veiculo"
+# recompensa local sem tocar no saldo real (Wallet) nem no badge real
+# (_coin_badge/_coin_label). Chamado pelo GameController so quando
+# is_polish_test e verdadeiro.
+func show_polish_test_coin_counter(amount: int) -> void:
+	if _polish_coin_badge == null:
+		_build_polish_coin_badge()
+	_polish_coin_label.text = str(amount)
+	_bump_polish_coin_badge()
+
+func _build_polish_coin_badge() -> void:
+	_polish_coin_badge = PanelContainer.new()
+	_polish_coin_badge.name = "PolishTestCoinBadge"
+	_polish_coin_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_polish_coin_badge.position = Vector2(28.0, 140.0)
+	_polish_coin_badge.pivot_offset = Vector2(48.0, 17.0)
+	_polish_coin_badge.add_theme_stylebox_override("panel", _polish_coin_badge_style())
+
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 4)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_polish_coin_badge.add_child(row)
+
+	# Item 12: "TESTE" -> "DEV" (mais curto, indicacao ainda mais direta de
+	# que isto NAO e o contador real) e fontes bem menores que a badge real
+	# -- discreto de proposito, nunca deve ler como parte do jogo final.
+	var tag := Label.new()
+	tag.text = "DEV"
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tag.add_theme_font_size_override("font_size", 8)
+	tag.add_theme_color_override("font_color", Color("#2a6f80"))
+	row.add_child(tag)
+
+	_polish_coin_label = Label.new()
+	_polish_coin_label.text = "0"
+	_polish_coin_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_polish_coin_label.add_theme_font_size_override("font_size", 13)
+	_polish_coin_label.add_theme_color_override("font_color", Color("#0d4a58"))
+	row.add_child(_polish_coin_label)
+
+	_root.add_child(_polish_coin_badge)
+
+func _bump_polish_coin_badge() -> void:
+	if _polish_coin_badge == null:
+		return
+	var bump := create_tween()
+	bump.tween_property(_polish_coin_badge, "scale", Vector2(1.18, 1.18), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	bump.tween_property(_polish_coin_badge, "scale", Vector2.ONE, 0.14)
+
+func _polish_coin_badge_style() -> StyleBoxFlat:
+	# ETAPA 6 (item 12): variante compacta de _coin_badge_style() -- raio e
+	# margens menores, pra badge inteira ocupar visivelmente menos espaco
+	# que o contador real de moedas.
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1, 1, 1, 0.85)
+	style.border_color = Color("#4ac6e6")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.shadow_color = Color(0.1, 0.15, 0.22, 0.16)
+	style.shadow_size = 2
+	style.set_content_margin(SIDE_LEFT, 7)
+	style.set_content_margin(SIDE_RIGHT, 8)
+	style.set_content_margin(SIDE_TOP, 3)
+	style.set_content_margin(SIDE_BOTTOM, 3)
+	return style
 
 func _coin_badge_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

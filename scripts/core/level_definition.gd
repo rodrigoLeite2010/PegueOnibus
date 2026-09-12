@@ -10,20 +10,20 @@ var vehicles: Array[VehicleDefinition]
 
 func _init(
 	p_id: int = 1,
-	p_waiting_slots: int = 5,
+	p_waiting_slots: int = 4,
 	p_board_rows: int = 9,
 	p_board_cols: int = 7,
 	p_passengers: Array[String] = [],
 	p_vehicles: Array[VehicleDefinition] = []
 ) -> void:
 	id = p_id
-	waiting_slots = p_waiting_slots
+	waiting_slots = 4
 	board_rows = p_board_rows
 	board_cols = p_board_cols
-	passengers = p_passengers.duplicate()
 	vehicles = []
 	for vehicle: VehicleDefinition in p_vehicles:
 		vehicles.append(vehicle.duplicate_definition())
+	passengers = _normalized_passengers(p_passengers, vehicles)
 
 static func from_dictionary(data: Dictionary) -> LevelDefinition:
 	var parsed_passengers: Array[String] = []
@@ -48,12 +48,42 @@ static func from_dictionary(data: Dictionary) -> LevelDefinition:
 	var board: Dictionary = data.get("board", {})
 	return LevelDefinition.new(
 		data.get("id", 1),
-		data.get("waiting_slots", 5),
+		4,
 		board.get("rows", 9),
 		board.get("cols", 7),
 		parsed_passengers,
 		parsed_vehicles
 	)
+
+# Garante que a fila tenha EXATAMENTE a soma das capacidades dos veiculos,
+# por cor. Preserva a ordem original enquanto houver demanda daquela cor,
+# remove passageiros excedentes e completa faltantes no fim. Assim uma fase
+# nunca pode terminar com pessoas sobrando por erro de JSON/geracao.
+static func _normalized_passengers(source: Array[String], vehicle_defs: Array[VehicleDefinition]) -> Array[String]:
+	var required: Dictionary = {}
+	for vehicle: VehicleDefinition in vehicle_defs:
+		required[vehicle.color_id] = int(required.get(vehicle.color_id, 0)) + vehicle.capacity
+
+	var used: Dictionary = {}
+	var result: Array[String] = []
+	for color_id: String in source:
+		var need: int = int(required.get(color_id, 0))
+		var have: int = int(used.get(color_id, 0))
+		if have < need:
+			result.append(color_id)
+			used[color_id] = have + 1
+
+	# Se o arquivo tinha passageiros a menos, completa por cor.
+	for vehicle: VehicleDefinition in vehicle_defs:
+		var color_id: String = vehicle.color_id
+		var need: int = int(required.get(color_id, 0))
+		var have: int = int(used.get(color_id, 0))
+		while have < need:
+			result.append(color_id)
+			have += 1
+		used[color_id] = have
+
+	return result
 
 func duplicate_definition() -> LevelDefinition:
 	return LevelDefinition.new(id, waiting_slots, board_rows, board_cols, passengers, vehicles)

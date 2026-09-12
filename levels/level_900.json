@@ -1,6 +1,6 @@
 {
   "id": 900,
-  "waiting_slots": 5,
+  "waiting_slots": 4,
   "board": {
     "rows": 10,
     "cols": 9

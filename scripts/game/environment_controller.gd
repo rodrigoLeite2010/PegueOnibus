@@ -65,10 +65,17 @@ var _group_decoration: Node3D
 func _ready() -> void:
 	rebuild()
 
-func setup(p_rows: int, p_cols: int, p_cell_size: float) -> void:
+# ETAPA 6 (PolishTest, fase 950 exclusivamente): quando true, rebuild() usa
+# folgas bem menores ao redor do tabuleiro (menos "faixa vazia") e cores da
+# PolishPalette na grama; nenhuma fase normal chama setup() com este
+# argumento, entao o patio delas continua identico.
+var is_polish_test: bool = false
+
+func setup(p_rows: int, p_cols: int, p_cell_size: float, p_is_polish_test: bool = false) -> void:
 	rows = p_rows
 	cols = p_cols
 	cell_size = p_cell_size
+	is_polish_test = p_is_polish_test
 	rebuild()
 
 func rebuild() -> void:
@@ -94,7 +101,11 @@ func rebuild() -> void:
 	_add_side_connector("right")
 	# O lado "up" ja ganha uma rua/plataforma dedicada em
 	# GameController._setup_boarding_area(); nao duplicamos aqui.
-	_add_lot_parking_lines()
+	# ETAPA 6, item 6: as vagas extras pintadas no patio (fora do tabuleiro
+	# jogavel) somavam "espaco visual inutil" e liam como planilha -- a
+	# PolishTest fica so com grama/pista/poucos props, como pedido.
+	if not is_polish_test:
+		_add_lot_parking_lines()
 	_add_trees()
 	_add_benches()
 	_add_lamps()
@@ -126,22 +137,45 @@ func _add_box(parent: Node3D, box_size: Vector3, box_position: Vector3, color: C
 	parent.add_child(mesh_instance)
 	return mesh_instance
 
+# ETAPA 6, item 6: folgas dedicadas da PolishTest -- bem menores que as
+# normais (PLAZA_PADDING/GRASS_PADDING acima, usadas por toda fase normal
+# sem excecao), pra reduzir a "faixa vazia" ao redor do tabuleiro sem
+# remover grama/pista/arvores (que o pedido explicitamente quer manter).
+const POLISH_PLAZA_PADDING := 1.35
+const POLISH_GRASS_PADDING := 0.85
+
+func _plaza_padding() -> float:
+	return POLISH_PLAZA_PADDING if is_polish_test else PLAZA_PADDING
+
+func _grass_padding() -> float:
+	return POLISH_GRASS_PADDING if is_polish_test else GRASS_PADDING
+
+# ETAPA 6, item 6: pista de acesso mais curta pra combinar com a folga
+# menor da PolishTest -- sem isso a pista continuaria com o comprimento
+# normal e acabaria pisando na grama, fora da pavimentacao menor.
+const POLISH_CONNECTOR_LENGTH := 0.85
+
+func _connector_length() -> float:
+	return POLISH_CONNECTOR_LENGTH if is_polish_test else CONNECTOR_LENGTH
+
 func _add_grass() -> void:
 	var size: Vector2 = _board_size()
-	var pad: float = PLAZA_PADDING + GRASS_PADDING
+	var pad: float = _plaza_padding() + _grass_padding()
+	var grass_color: Color = PolishPalette.GRASS if is_polish_test else COLOR_GRASS
 	_add_box(
 		_group_ground,
 		Vector3(size.x + pad * 2.0, 0.05, size.y + pad * 2.0),
 		_board_center() + Vector3(0.0, -0.30, 0.0),
-		COLOR_GRASS,
+		grass_color,
 		1.0
 	)
 
 func _add_plaza() -> void:
 	var size: Vector2 = _board_size()
+	var pad: float = _plaza_padding()
 	_add_box(
 		_group_parking_lot,
-		Vector3(size.x + PLAZA_PADDING * 2.0, 0.06, size.y + PLAZA_PADDING * 2.0),
+		Vector3(size.x + pad * 2.0, 0.06, size.y + pad * 2.0),
 		_board_center() + Vector3(0.0, -0.24, 0.0),
 		COLOR_PLAZA,
 		0.95
@@ -149,8 +183,9 @@ func _add_plaza() -> void:
 
 func _add_plaza_edge() -> void:
 	var size: Vector2 = _board_size()
-	var width: float = size.x + PLAZA_PADDING * 2.0
-	var depth: float = size.y + PLAZA_PADDING * 2.0
+	var pad: float = _plaza_padding()
+	var width: float = size.x + pad * 2.0
+	var depth: float = size.y + pad * 2.0
 	var center: Vector3 = _board_center()
 	var specs: Array[Dictionary] = [
 		{"pos": center + Vector3(0.0, -0.205, -depth * 0.5 + 0.06), "size": Vector3(width, 0.03, 0.12)},
@@ -164,18 +199,19 @@ func _add_plaza_edge() -> void:
 func _add_side_connector(direction: String) -> void:
 	var size: Vector2 = _board_size()
 	var center: Vector3 = _board_center()
+	var connector_length: float = _connector_length()
 	var box_size: Vector3
 	var box_position: Vector3
 	match direction:
 		"down":
-			box_size = Vector3(CONNECTOR_WIDTH, 0.05, CONNECTOR_LENGTH + 0.3)
-			box_position = center + Vector3(0.0, -0.17, size.y * 0.5 + CONNECTOR_LENGTH * 0.5)
+			box_size = Vector3(CONNECTOR_WIDTH, 0.05, connector_length + 0.3)
+			box_position = center + Vector3(0.0, -0.17, size.y * 0.5 + connector_length * 0.5)
 		"left":
-			box_size = Vector3(CONNECTOR_LENGTH + 0.3, 0.05, CONNECTOR_WIDTH)
-			box_position = center + Vector3(-size.x * 0.5 - CONNECTOR_LENGTH * 0.5, -0.17, 0.0)
+			box_size = Vector3(connector_length + 0.3, 0.05, CONNECTOR_WIDTH)
+			box_position = center + Vector3(-size.x * 0.5 - connector_length * 0.5, -0.17, 0.0)
 		"right":
-			box_size = Vector3(CONNECTOR_LENGTH + 0.3, 0.05, CONNECTOR_WIDTH)
-			box_position = center + Vector3(size.x * 0.5 + CONNECTOR_LENGTH * 0.5, -0.17, 0.0)
+			box_size = Vector3(connector_length + 0.3, 0.05, CONNECTOR_WIDTH)
+			box_position = center + Vector3(size.x * 0.5 + connector_length * 0.5, -0.17, 0.0)
 		_:
 			return
 	_add_box(_group_roads, box_size, box_position, COLOR_ASPHALT, 0.9)
@@ -225,8 +261,9 @@ func _add_lot_parking_lines() -> void:
 func _add_trees() -> void:
 	var size: Vector2 = _board_size()
 	var center: Vector3 = _board_center()
-	var corner_x: float = size.x * 0.5 + PLAZA_PADDING * 0.6
-	var corner_z: float = size.y * 0.5 + PLAZA_PADDING * 0.62
+	var pad: float = _plaza_padding()
+	var corner_x: float = size.x * 0.5 + pad * 0.6
+	var corner_z: float = size.y * 0.5 + pad * 0.62
 	_add_tree(center + Vector3(-corner_x, 0.0, corner_z))
 	_add_tree(center + Vector3(corner_x, 0.0, corner_z))
 
@@ -265,7 +302,7 @@ func _add_tree(base_position: Vector3) -> void:
 func _add_benches() -> void:
 	var size: Vector2 = _board_size()
 	var center: Vector3 = _board_center()
-	var z: float = size.y * 0.5 + PLAZA_PADDING * 0.32
+	var z: float = size.y * 0.5 + _plaza_padding() * 0.32
 	_add_bench(center + Vector3(-size.x * 0.22, 0.0, z))
 	_add_bench(center + Vector3(size.x * 0.22, 0.0, z))
 
@@ -281,8 +318,9 @@ func _add_bench(base_position: Vector3) -> void:
 func _add_lamps() -> void:
 	var size: Vector2 = _board_size()
 	var center: Vector3 = _board_center()
-	var corner_x: float = size.x * 0.5 + PLAZA_PADDING * 0.88
-	var corner_z: float = size.y * 0.5 + PLAZA_PADDING * 0.88
+	var pad: float = _plaza_padding()
+	var corner_x: float = size.x * 0.5 + pad * 0.88
+	var corner_z: float = size.y * 0.5 + pad * 0.88
 	for sign_x: float in [-1.0, 1.0]:
 		for sign_z: float in [-1.0, 1.0]:
 			_add_lamp(center + Vector3(sign_x * corner_x, 0.0, sign_z * corner_z))
@@ -318,7 +356,7 @@ func _add_lamp(base_position: Vector3) -> void:
 func _add_side_planter(side: int) -> void:
 	var size: Vector2 = _board_size()
 	var center: Vector3 = _board_center()
-	var x: float = center.x + float(side) * (size.x * 0.5 + PLAZA_PADDING * 0.55)
+	var x: float = center.x + float(side) * (size.x * 0.5 + _plaza_padding() * 0.55)
 	var base_position := Vector3(x, 0.0, center.z)
 	_add_planter(base_position)
 

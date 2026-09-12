@@ -57,7 +57,7 @@ static func difficulty_params(level_number: int) -> Dictionary:
 	var vehicle_count: int = clampi(7 + int((n - 6) / 2.4), 6, 18)
 	var board_rows: int = clampi(9 + int((n - 6) / 6.0), 8, 12)
 	var board_cols: int = clampi(8 + int((n - 6) / 8.0), 7, 10)
-	var waiting_slots: int = 5
+	var waiting_slots: int = 4
 	var van_chance: float = 0.0
 	if n >= 8:
 		van_chance = clampf(float(n - 8) * 0.06, 0.0, 0.45)
