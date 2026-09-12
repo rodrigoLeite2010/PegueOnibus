@@ -117,11 +117,11 @@ var _selectable_glow_material: StandardMaterial3D
 var _selectable_tween: Tween
 var _is_selectable: bool = false
 
-# ETAPA 3 (item 10 do pedido): protecao contra taps repetidos SO durante o
+# ETAPA 3/8 (item 10 do pedido): protecao contra taps repetidos SO durante o
 # fluxo polished (feedback -> dirigindo -> estacionando). GameController
-# consulta is_polish_busy() antes de reprocessar um toque na fase 950 (ver
-# _process_vehicle_tap); fora da fase 950 esta flag nunca e tocada, entao
-# nenhuma fase normal muda de comportamento.
+# consulta is_polish_busy() antes de reprocessar um toque em qualquer fase
+# POLISHED (ver _process_vehicle_tap, is_polished); em fases CLASSIC esta
+# flag nunca e tocada, entao elas nunca mudam de comportamento.
 var _polish_busy: bool = false
 var _polish_feedback_tween: Tween
 var _polish_roll_degrees: float = 0.0
@@ -169,15 +169,16 @@ func _ready() -> void:
 	if get_child_count() == 0:
 		rebuild()
 
-# ETAPA 6, item 3 (PolishTest, fase 950 exclusivamente): quando true,
-# rebuild() reforca a sombra de contato (maior/mais nitida no centro) e
-# acrescenta um highlight superior sutil, pra o veiculo "saltar" do
-# cenario. Nenhuma fase normal passa este argumento, entao o visual dela
-# nunca muda.
-var is_polish_visual: bool = false
+# ETAPA 6/8: quando true, rebuild() reforca a sombra de contato (maior/mais
+# nitida no centro) e acrescenta um highlight superior sutil, pra o veiculo
+# "saltar" do cenario. Repassado por GameController a partir do proprio
+# is_polished (presentation_profile) -- hoje vale pra fase 950 e para as
+# fases piloto 1-3; fases CLASSIC continuam sem passar este argumento, entao
+# o visual delas nunca muda.
+var is_polished: bool = false
 
-func setup_from_state(vehicle: VehicleState, cell_size: float, p_is_polish_visual: bool = false) -> void:
-	is_polish_visual = p_is_polish_visual
+func setup_from_state(vehicle: VehicleState, cell_size: float, p_is_polished: bool = false) -> void:
+	is_polished = p_is_polished
 	vehicle_id = vehicle.id
 	type_id = vehicle.type_id
 	color_id = vehicle.color_id
@@ -212,7 +213,7 @@ func rebuild() -> void:
 	var depth: float = maxf(0.78, float(footprint_rows) * 0.88)
 
 	_add_shadow(width, depth)
-	if is_polish_visual:
+	if is_polished:
 		_add_polish_highlight(width, depth)
 	_add_selectable_glow(width, depth)
 	_visual_pivot = Node3D.new()
@@ -283,9 +284,10 @@ func animate_valid_tap() -> void:
 	tween.tween_property(_visual_pivot, "scale", Vector3(1.07, 1.07, 1.07), 0.075)
 	tween.tween_property(_visual_pivot, "scale", Vector3.ONE, 0.095)
 
-# ETAPA 3, item 10: GameController consulta isto (so na fase 950, ver
-# _process_vehicle_tap) antes de reprocessar um toque -- enquanto true,
-# nenhum novo toque neste veiculo comeca outro feedback/rota/estacionamento.
+# ETAPA 3/8, item 10: GameController consulta isto (em qualquer fase
+# POLISHED, ver _process_vehicle_tap/is_polished) antes de reprocessar um
+# toque -- enquanto true, nenhum novo toque neste veiculo comeca outro
+# feedback/rota/estacionamento.
 func is_polish_busy() -> bool:
 	return _polish_busy
 
@@ -521,9 +523,9 @@ func _apply_curve_progress(distance: float, curve: Curve3D, total_length: float)
 			_visual_pivot.rotation_degrees.z = lerpf(_visual_pivot.rotation_degrees.z, 0.0, 0.25)
 
 
-# --- ETAPA 3 (Polish Test): variante "polida" de drive_route(), usada
-# SOMENTE quando GameController detecta state.level_id == POLISH_TEST_LEVEL_ID
-# (ver GameController._process_vehicle_tap). Reaproveita _build_route_curve()
+# --- ETAPA 3/8: variante "polida" de drive_route(), usada quando
+# GameController resolve is_polished=true (presentation_profile POLISHED --
+# ver GameController._process_vehicle_tap). Reaproveita _build_route_curve()
 # (geometria pura, identica para os dois casos) mas substitui o unico tween de
 # progresso por 3 segmentos encadeados no MESMO Tween -- cada um com seu
 # proprio trans/ease -- pra dar sensacao real de "acelera -> cruzeiro ->
@@ -1179,8 +1181,8 @@ func _add_shadow(width: float, depth: float) -> void:
 	# PolishTest -- reforca a leitura "o veiculo esta ACIMA do chao", sem
 	# mexer em nenhuma cor logica. Fases normais mantem exatamente os
 	# valores antigos.
-	var shadow_scale_mult: float = 1.12 if is_polish_visual else 1.0
-	var shadow_alpha: float = 0.26 if is_polish_visual else 0.18
+	var shadow_scale_mult: float = 1.12 if is_polished else 1.0
+	var shadow_alpha: float = 0.26 if is_polished else 0.18
 	shadow.scale = Vector3(maxf(width * 0.82, 0.72) * shadow_scale_mult, 1.0, maxf(depth * 0.64, 0.62) * shadow_scale_mult)
 	shadow.position = Vector3(0.0, -0.235, 0.07)
 	var material := StandardMaterial3D.new()
