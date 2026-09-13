@@ -356,13 +356,23 @@ func _build() -> void:
 # pivots e nao faz nada (guard clause ja existente, sem mudanca necessaria
 # ali) -- o Node3D inteiro (este PassengerController) continua sendo
 # movimentado por step_to()/walk_to_and_board*() exatamente como antes, sem
-# root motion. Cor NAO e reaplicada ainda (Etapa 10B fara isso); todos ficam
-# com o material original do GLB por enquanto (Passo 6 do pedido da Etapa
-# 10A: prova visual/estrutural, nao recolorir ainda).
+# root motion.
+# ETAPA 10B: a camiseta do GLB agora respeita color_id, usando o MESMO
+# COLOR_MAP que a versao procedural ja usava (nao duplicado -- Passenger3D
+# so recebe a Color final, ver set_passenger_color()).
+# ETAPA 10C: antes de qualquer outra coisa, configure(color_id) escolhe e
+# instancia o modelo (passenger_01 OU passenger_02, ver
+# passenger_visual_variants.gd) dentro do Passenger3D -- este controller
+# nunca fica sabendo QUAL modelo foi escolhido nem precisa saber (Passo 8
+# do pedido: so pede idle/walk/run). color_id e passado so como "semente"
+# para a escolha ficar bem distribuida (Passo 4/5); a cor de gameplay
+# continua vindo, como sempre, so do COLOR_MAP abaixo.
 func _build_glb_visual() -> void:
 	var visual: Passenger3D = PASSENGER_3D_SCENE.instantiate() as Passenger3D
 	_body_root.add_child(visual)
 	_glb_visual = visual
+	_glb_visual.configure(color_id)
+	_glb_visual.set_passenger_color(COLOR_MAP.get(color_id, Color.WHITE))
 	# Passo 3: comeca esperando (idle), com um deslocamento aleatorio dentro
 	# do clipe para que uma fila inteira de passageiros GLB nao fique
 	# perfeitamente sincronizada (cada um "ligeiramente independente").

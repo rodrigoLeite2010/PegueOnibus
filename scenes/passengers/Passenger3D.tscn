@@ -1,11 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://passenger_3d_wrapper"]
+[gd_scene format=3 uid="uid://yjsempkcb4y4"]
 
-[ext_resource type="Script" path="res://scripts/game/passenger_3d.gd" id="1_script"]
-[ext_resource type="PackedScene" uid="uid://cpc21nktxslve" path="res://assets/characters/passengers/passenger_01.glb" id="2_glb"]
+[ext_resource type="Script" uid="uid://pivxqx6tjje0" path="res://scripts/game/passenger_3d.gd" id="1_script"]
 
-[node name="Passenger3D" type="Node3D"]
+[node name="Passenger3D" type="Node3D" unique_id=1054802693]
 script = ExtResource("1_script")
 
-[node name="VisualRoot" type="Node3D" parent="."]
-
-[node name="passenger_01" parent="VisualRoot" instance=ExtResource("2_glb")]
+[node name="VisualRoot" type="Node3D" parent="." unique_id=1724134727]

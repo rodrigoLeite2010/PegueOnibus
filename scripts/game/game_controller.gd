@@ -77,7 +77,7 @@ const POLISH_TEST_LEVEL_ID := 950
 # (comportamento pre-Etapa-8), util para comparar visualmente durante o
 # desenvolvimento sem precisar reverter codigo.
 const FORCE_CLASSIC_DEBUG := false
-const FORCE_GLB_PASSENGER_VISUAL_DEBUG := false
+const FORCE_GLB_PASSENGER_VISUAL_DEBUG := true
 
 # --- ETAPA 8B: densidade de conteudo (ContentDensity) ---
 # Complementa PresentationProfile: POLISHED decide COMO uma fase e
